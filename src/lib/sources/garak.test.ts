@@ -69,4 +69,18 @@ describe("parseGarakJson (dataJsonOpen.do)", () => {
     expect(parseGarakJson({})).toEqual([]);
     expect(parseGarakJson({ list: [] })).toEqual([]);
   });
+
+  it("실제 응답(resultData 래퍼, 등급 '특(1등)', 문자열 PPRICE)을 파싱한다", () => {
+    // dataJsonOpen.do 실제 응답 형태
+    const real = {
+      resultData: [
+        { ADJ_DT: "20241030", DDD: "특(1등)", UUN: "10kg", ROWNO: 1, PUMMOK: "배추", QTY: 20, PUMJONG: "쌈배추", SSANGI: "강원특별자치도 평창군", PPRICE: "9800" },
+        { ADJ_DT: "20241030", DDD: "상(2등)", UUN: "10kg", ROWNO: 2, PUMMOK: "배추", QTY: 5, PUMJONG: "쌈배추", SSANGI: "강원특별자치도 평창군", PPRICE: "10200" },
+      ],
+    };
+    const rows = parseGarakJson(real);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ pummok: "배추", price: 9800, unit: "10kg", origin: "강원특별자치도 평창군" });
+    expect(aggregateByPummok(rows).get("배추")).toBe(10000);
+  });
 });

@@ -165,13 +165,14 @@ export async function fetchGarakAuction(
   dateISO: string,
 ): Promise<number | null> {
   if (!process.env.GARAK_API_ID || !process.env.GARAK_API_PW) return null;
+  // s_pummok은 부분매칭이므로 괄호/수식어를 제거한 기본 품목명으로 질의한다.
+  const query = itemName.replace(/\(.*?\)/g, "").trim() || itemName;
   const perCorp = await Promise.all(
-    GARAK_CORP_CODES.map((b) => fetchCorp(itemName, dateISO, b)),
+    GARAK_CORP_CODES.map((b) => fetchCorp(query, dateISO, b)),
   );
   const all = perCorp.flat();
   if (all.length === 0) return null;
+  // PUMMOK이 질의어와 정확히 일치하는 품목만 채택(예: "사과" 질의 시 "대추(사과대추)" 배제)
   const agg = aggregateByPummok(all);
-  if (agg.has(itemName)) return agg.get(itemName)!;
-  for (const [k, v] of agg) if (k.includes(itemName)) return v;
-  return null;
+  return agg.get(query) ?? agg.get(itemName) ?? null;
 }

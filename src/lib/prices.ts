@@ -16,12 +16,9 @@ import type { PriceFeed, PriceItem } from "./types";
  * 각 값은 SAMPLE_ITEMS 위에 오버레이되며, 키가 없거나 실패하면 해당 값만 샘플을 유지한다.
  */
 
-function todayKST(): Date {
-  const now = new Date();
-  return new Date(now.getTime() + 9 * 60 * 60 * 1000);
-}
-function iso(d: Date): string {
-  return d.toISOString().slice(0, 10);
+/** 임의 시각을 KST 기준 YYYY-MM-DD로 변환 */
+function kstDate(d: Date): string {
+  return new Date(d.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 /** API 품목명과 내부 품목명 매칭 (예: "사과(후지)" ↔ "사과") */
@@ -58,11 +55,11 @@ async function resolveAuction(
   return map.size ? map : null;
 }
 
-export async function getPriceFeed(): Promise<PriceFeed> {
-  const today = todayKST();
-  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-  const todayISO = iso(today);
-  const yestISO = iso(yesterday);
+export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
+  const todayISO = dateISO ?? kstDate(new Date());
+  // 정오(KST) 기준으로 전일 계산 → 타임존 경계 오프바이원 방지
+  const anchor = new Date(`${todayISO}T12:00:00+09:00`);
+  const yestISO = kstDate(new Date(anchor.getTime() - 24 * 60 * 60 * 1000));
 
   const names = SAMPLE_ITEMS.map((i) => i.name);
   const categories = SAMPLE_ITEMS.map((i) => i.category);
