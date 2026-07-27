@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "db:migrate": "node --env-file=.env.local ./scripts/db-migrate.mjs"
+    "db:migrate": "node --env-file=.env.local ./scripts/db-migrate.mjs",
+    "go:live": "node --env-file=.env.local ./scripts/go-live.mjs"
   },
   "dependencies": {
     "fast-xml-parser": "^5.10.1",

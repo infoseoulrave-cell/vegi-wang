@@ -10,7 +10,7 @@ if (!url) {
 
 const file = resolve(process.cwd(), "db/migrations/001_init.sql");
 const sqlText = readFileSync(file, "utf8");
-const sql = postgres(url, { max: 1, prepare: false });
+const sql = postgres(url, { max: 1, prepare: false, ssl: "require" });
 
 try {
   await sql.unsafe(sqlText);

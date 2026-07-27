@@ -75,13 +75,25 @@ DEFAULT_MARKET_CODE=110001
 BASELINE_WINDOW_DAYS=30
 ```
 
-## 마이그레이션
+## Supabase 연결 (실가동)
 
-Neon / Vercel Postgres / Supabase SQL editor에서:
+1. [Supabase](https://supabase.com/dashboard)에서 프로젝트 생성(또는 기존 프로젝트 선택)
+2. **Project Settings → Database → Connection string → URI** 복사  
+   - 권장: **Session mode** (`…pooler.supabase.com:5432`)  
+   - 비밀번호에 특수문자가 있으면 URL 인코딩
+3. Cloud Agent Secrets 또는 `.env.local`에 추가:
+   ```bash
+   DATABASE_URL=postgresql://postgres.[ref]:[PASSWORD]@aws-0-….pooler.supabase.com:5432/postgres
+   CRON_SECRET=   # 로컬에서 openssl rand -hex 32 로 생성 가능
+   ```
+4. 실행:
+   ```bash
+   npm run db:migrate
+   npm run go:live    # migrate + 서버 + /api/cron/ingest 한 번에
+   ```
 
-```bash
-psql "$DATABASE_URL" -f db/migrations/001_init.sql
-```
+> 이 환경의 Supabase/Vercel MCP는 `needsAuth` 상태라, Dashboard에서 URI를 직접 넣거나 Cursor에서 Supabase MCP를 인증해야 에이전트가 자동 연결할 수 있습니다.
+
 
 ## 로컬 (DB 없이)
 

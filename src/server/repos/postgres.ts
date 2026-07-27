@@ -28,6 +28,7 @@ export function getSql(databaseUrl: string): Sql {
       idle_timeout: 20,
       connect_timeout: 10,
       prepare: false, // serverless/pgbouncer 호환
+      ssl: "require", // Supabase / managed Postgres
     });
   }
   return cached;
