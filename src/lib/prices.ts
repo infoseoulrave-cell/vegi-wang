@@ -3,17 +3,20 @@ import { SAMPLE_ITEMS } from "./sample-data";
 import type { PriceFeed, PriceItem } from "./types";
 
 /**
- * 오늘의 경매가 피드를 반환한다.
+ * 오늘의 시세 피드 = [가락시장 경락가(도매)] + [KAMIS 소매가] 조합.
  *
- * 데이터 소스 우선순위:
- *  1) KAMIS(농수산물유통정보) OpenAPI — 환경변수 KAMIS_CERT_KEY / KAMIS_CERT_ID 가 있을 때
- *  2) 실패 시 샘플 데이터(SAMPLE_ITEMS)로 폴백하여 플랫폼이 항상 동작하도록 보장
+ * 동작 방식:
+ *  - 기준 카탈로그와 평년(30일) 기준가는 SAMPLE_ITEMS 를 사용한다.
+ *  - DATA_GO_KR_SERVICE_KEY 가 있으면 가락시장 경매결과로 오늘 경락가를 덮어쓴다.
+ *  - KAMIS_CERT_KEY / KAMIS_CERT_ID 가 있으면 KAMIS 소매가로 덮어쓴다.
+ *  - 키가 없거나 실패하면 해당 값은 샘플을 유지한다(플랫폼은 항상 동작).
  *
- * NOTE: 라이브 연동 시 KAMIS 응답 필드(dpr1/dpr2 등)와 기준가(평년/최근평균) 산출식은
- * 실제 인증키로 응답을 받아 검증한 뒤 매핑을 확정해야 한다.
+ * NOTE: 라이브 응답 필드 매핑과 평년 기준가(별도 이력)는 실제 인증키로 검증 후 확정 필요.
  */
 
 const KAMIS_ENDPOINT = "https://www.kamis.or.kr/service/price/xml.do";
+const GARAK_ENDPOINT =
+  "https://apis.data.go.kr/B190001/publicdataapi/service"; // 서울시농수산식품공사 경매결과(예시)
 
 function todayKST(): string {
   const now = new Date();
@@ -21,76 +24,11 @@ function todayKST(): string {
   return kst.toISOString().slice(0, 10);
 }
 
-async function fetchLiveItems(): Promise<PriceItem[] | null> {
-  const certKey = process.env.KAMIS_CERT_KEY;
-  const certId = process.env.KAMIS_CERT_ID;
-  if (!certKey || !certId) return null;
-
-  const params = new URLSearchParams({
-    action: "dailyPriceByCategoryList",
-    p_product_cls_code: "02", // 02: 도매
-    p_country_code: "",
-    p_regday: todayKST(),
-    p_convert_kg_yn: "N",
-    p_item_category_code: "200", // 채소류 (예시 카테고리)
-    p_cert_key: certKey,
-    p_cert_id: certId,
-    p_returntype: "json",
-  });
-
-  try {
-    const res = await fetch(`${KAMIS_ENDPOINT}?${params.toString()}`, {
-      // 아침 경매가는 자주 바뀌지 않으므로 10분 캐시
-      next: { revalidate: 600 },
-    });
-    if (!res.ok) return null;
-    const data: unknown = await res.json();
-    const items = normalizeKamis(data);
-    return items.length > 0 ? items : null;
-  } catch {
-    return null;
-  }
-}
-
-/** KAMIS 응답을 내부 PriceItem 형태로 방어적으로 변환한다. */
-function normalizeKamis(data: unknown): PriceItem[] {
-  const rows = extractRows(data);
-  const items: PriceItem[] = [];
-  for (const row of rows) {
-    const name = str(row.item_name) || str(row.productName);
-    const today = num(row.dpr1);
-    const prev = num(row.dpr2);
-    if (!name || !today) continue;
-    items.push({
-      id: str(row.item_code) || name,
-      name,
-      category: "채소",
-      unit: str(row.unit) || "-",
-      grade: str(row.rank) || "상",
-      origin: str(row.county_name) || "-",
-      todayPrice: today,
-      prevPrice: prev || today,
-      // 최근 평균이 별도 API이므로, 라이브 검증 전까지는 당일가를 기준으로 근사
-      baselinePrice: num(row.dpr7) || prev || today,
-    });
-  }
-  return items;
-}
-
 type Row = Record<string, unknown>;
-
-function extractRows(data: unknown): Row[] {
-  if (!data || typeof data !== "object") return [];
-  const maybe = data as { price?: unknown; data?: { item?: unknown } };
-  const candidate = maybe.price ?? maybe.data?.item;
-  if (Array.isArray(candidate)) return candidate as Row[];
-  return [];
-}
 
 function str(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
 }
-
 function num(v: unknown): number {
   if (typeof v === "number") return v;
   if (typeof v === "string") {
@@ -100,14 +38,108 @@ function num(v: unknown): number {
   return 0;
 }
 
+/** 가락시장 경매결과 → { 품목명: { price, prev } } */
+async function fetchGarakAuction(): Promise<Map<
+  string,
+  { price: number; prev: number }
+> | null> {
+  const key = process.env.DATA_GO_KR_SERVICE_KEY;
+  if (!key) return null;
+  const params = new URLSearchParams({
+    serviceKey: key,
+    resultType: "json",
+    saleDate: todayKST().replace(/-/g, ""),
+    marketCode: "110001", // 가락도매시장 (예시)
+  });
+  try {
+    const res = await fetch(`${GARAK_ENDPOINT}?${params}`, {
+      next: { revalidate: 600 },
+    });
+    if (!res.ok) return null;
+    const rows = extractRows(await res.json());
+    const map = new Map<string, { price: number; prev: number }>();
+    for (const row of rows) {
+      const name = str(row.pumName) || str(row.item_name) || str(row.itemName);
+      const price = num(row.avgAmt) || num(row.avgPrice) || num(row.price);
+      if (!name || !price) continue;
+      map.set(name, { price, prev: num(row.prevAmt) || price });
+    }
+    return map.size ? map : null;
+  } catch {
+    return null;
+  }
+}
+
+/** KAMIS 일별 소매가 → { 품목명: 원/kg } */
+async function fetchKamisRetail(): Promise<Map<string, number> | null> {
+  const certKey = process.env.KAMIS_CERT_KEY;
+  const certId = process.env.KAMIS_CERT_ID;
+  if (!certKey || !certId) return null;
+  const params = new URLSearchParams({
+    action: "dailyPriceByCategoryList",
+    p_product_cls_code: "01", // 01: 소매
+    p_country_code: "",
+    p_regday: todayKST(),
+    p_convert_kg_yn: "Y",
+    p_item_category_code: "200",
+    p_cert_key: certKey,
+    p_cert_id: certId,
+    p_returntype: "json",
+  });
+  try {
+    const res = await fetch(`${KAMIS_ENDPOINT}?${params}`, {
+      next: { revalidate: 600 },
+    });
+    if (!res.ok) return null;
+    const rows = extractRows(await res.json());
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      const name = str(row.item_name) || str(row.productName);
+      const price = num(row.dpr1) || num(row.price);
+      if (!name || !price) continue;
+      map.set(name, price);
+    }
+    return map.size ? map : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractRows(data: unknown): Row[] {
+  if (!data || typeof data !== "object") return [];
+  const d = data as Record<string, unknown>;
+  const candidates: unknown[] = [
+    d.price,
+    (d.data as { item?: unknown })?.item,
+    ((d.response as { body?: { items?: { item?: unknown } } })?.body?.items)
+      ?.item,
+  ];
+  for (const c of candidates) if (Array.isArray(c)) return c as Row[];
+  return [];
+}
+
 export async function getPriceFeed(): Promise<PriceFeed> {
-  const live = await fetchLiveItems();
-  const source = live ? "live" : "sample";
-  const items = (live ?? SAMPLE_ITEMS).map(withSignal);
+  const [auction, retail] = await Promise.all([
+    fetchGarakAuction(),
+    fetchKamisRetail(),
+  ]);
+
+  const items = SAMPLE_ITEMS.map((base): PriceItem => {
+    const a = auction?.get(base.name);
+    const r = retail?.get(base.name);
+    return {
+      ...base,
+      auctionPrice: a?.price ?? base.auctionPrice,
+      auctionPrevPrice: a?.prev ?? base.auctionPrevPrice,
+      retailPricePerKg: r ?? base.retailPricePerKg,
+    };
+  }).map(withSignal);
+
   return {
     date: todayKST(),
-    source,
     market: "서울 가락동 농수산물도매시장",
+    auctionSource: auction ? "live" : "sample",
+    retailSource: retail ? "live" : "sample",
     items,
   };
 }

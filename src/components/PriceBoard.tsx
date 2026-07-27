@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CompassBadge } from "@/components/CompassBadge";
+import { CompassBadge, RetailGapBadge } from "@/components/CompassBadge";
 import { signedPct, won } from "@/lib/format";
 import type { PriceItemWithSignal, ProduceCategory } from "@/lib/types";
 
@@ -43,40 +43,68 @@ export function PriceBoard({ items }: { items: PriceItemWithSignal[] }) {
         {visible.map((item) => (
           <article
             key={item.id}
-            className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5"
+            className="flex flex-col rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5"
           >
-            <div className="flex items-start justify-between">
+            <div className="flex items-start justify-between gap-2">
               <div>
                 <h3 className="text-lg font-bold">{item.name}</h3>
                 <p className="mt-0.5 text-xs text-foreground/50">
-                  {item.origin} · {item.grade} · {item.unit}
+                  {item.origin} · {item.grade} · {item.auctionUnit}
                 </p>
               </div>
               <CompassBadge level={item.compass} />
             </div>
 
-            <div className="mt-4 flex items-end justify-between">
-              <p className="text-2xl font-extrabold tracking-tight">
-                {won(item.todayPrice)}
+            {/* 가락시장 실제 경락가 */}
+            <div className="mt-4">
+              <p className="text-[11px] font-semibold text-brand-dark">
+                가락시장 경락가
               </p>
-              <p
-                className={`text-sm font-semibold ${
-                  item.changeRate < 0
-                    ? "text-emerald-600"
-                    : item.changeRate > 0
-                      ? "text-rose-600"
-                      : "text-foreground/50"
-                }`}
-              >
-                전일 {signedPct(item.changeRate)}
+              <div className="flex items-end justify-between">
+                <p className="text-2xl font-extrabold tracking-tight">
+                  {won(item.auctionPrice)}
+                </p>
+                <p
+                  className={`text-sm font-semibold ${
+                    item.changeRate < 0
+                      ? "text-emerald-600"
+                      : item.changeRate > 0
+                        ? "text-rose-600"
+                        : "text-foreground/50"
+                  }`}
+                >
+                  전일 {signedPct(item.changeRate)}
+                </p>
+              </div>
+              <p className="mt-0.5 text-xs text-foreground/50">
+                kg당 {won(item.auctionPerKg)} · 평년比{" "}
+                <span className="font-semibold text-foreground/70">
+                  {signedPct(item.deviationRate)}
+                </span>
               </p>
             </div>
 
-            <p className="mt-2 text-xs text-foreground/50">
-              평년(최근 30일 평균) 대비{" "}
-              <span className="font-semibold text-foreground/70">
-                {signedPct(item.deviationRate)}
-              </span>
+            {/* 소매가 대비 유통 지표 */}
+            <div className="mt-3 rounded-xl bg-background/60 p-3 ring-1 ring-black/5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-foreground/60">
+                  소매가 {won(item.retailPricePerKg)}/kg
+                </span>
+                <RetailGapBadge level={item.retailGap} />
+              </div>
+              <p className="mt-1 text-sm">
+                <span className="font-bold text-brand-dark">
+                  소매의 {item.retailMultiple}배
+                </span>
+                <span className="text-foreground/60">
+                  {" "}
+                  · 도매로 사면 kg당 {won(item.savingPerKg)} 절약
+                </span>
+              </p>
+            </div>
+
+            <p className="mt-3 text-xs leading-relaxed text-foreground/60">
+              💡 {item.recommendation}
             </p>
           </article>
         ))}

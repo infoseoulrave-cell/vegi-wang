@@ -1,5 +1,6 @@
 import { PriceBoard } from "@/components/PriceBoard";
 import { WaitlistForm } from "@/components/WaitlistForm";
+import { won } from "@/lib/format";
 import { getPriceFeed } from "@/lib/prices";
 
 export default async function Home() {
@@ -8,6 +9,11 @@ export default async function Home() {
   const best = [...feed.items].sort(
     (a, b) => a.deviationRate - b.deviationRate,
   )[0];
+  const bestSaving = [...feed.items].sort(
+    (a, b) => b.savingPerKg - a.savingPerKg,
+  )[0];
+  const isSample =
+    feed.auctionSource === "sample" || feed.retailSource === "sample";
 
   return (
     <main className="mx-auto w-full max-w-6xl px-5 pb-24">
@@ -31,20 +37,27 @@ export default async function Home() {
           🧭 오늘의 농수산물 가격 나침반
         </span>
         <h1 className="mx-auto mt-5 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">
-          오늘, <span className="text-brand">사기 좋은 날</span>인가요?
+          <span className="text-brand">가락시장 실제 경매 낙찰가</span>를
+          확인해보세요
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-lg text-foreground/60">
-          매일 아침 공영도매시장의 <b>경매가</b>를 소비자의 언어로 번역합니다.
-          배추·사과·고등어… 지금이 평년보다 싼지 비싼지 한눈에 보고 장을 보세요.
+          매일 아침 도매시장 <b>경락가</b>와 전국 <b>소매가</b>를 나란히
+          비교합니다. 지금이 평년보다 싼지, 소매에 거품이 얼마나 붙었는지 한눈에
+          보고 현명하게 장을 보세요.
         </p>
 
-        <div className="mx-auto mt-8 grid max-w-2xl grid-cols-3 gap-3">
+        <div className="mx-auto mt-8 grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label="오늘 기준일" value={feed.date} />
           <Stat label="사기 좋은 품목" value={`${cheapCount}개`} />
           <Stat
-            label="오늘의 추천"
+            label="가장 저렴(평년比)"
             value={best ? best.name : "-"}
-            hint={best ? `평년比 ${best.deviationRate}%` : undefined}
+            hint={best ? `${best.deviationRate}%` : undefined}
+          />
+          <Stat
+            label="도매 절약 최대"
+            value={bestSaving ? bestSaving.name : "-"}
+            hint={bestSaving ? `kg당 ${won(bestSaving.savingPerKg)}` : undefined}
           />
         </div>
       </section>
@@ -53,10 +66,10 @@ export default async function Home() {
       <section id="board" className="scroll-mt-8">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h2 className="text-2xl font-bold">오늘의 경매가</h2>
+            <h2 className="text-2xl font-bold">오늘의 경락가 · 소매가</h2>
             <p className="mt-1 text-sm text-foreground/50">
-              {feed.market}
-              {feed.source === "sample" && (
+              {feed.market} · 소매가 출처 KAMIS
+              {isSample && (
                 <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
                   샘플 데이터 (실데이터 연동 대기 중)
                 </span>
@@ -71,13 +84,13 @@ export default async function Home() {
       <section className="mt-20 grid gap-4 sm:grid-cols-3">
         <Feature
           icon="🧭"
-          title="가격 나침반"
-          desc="경매가를 평년 시세와 비교해 '사기 좋은 날'을 신호등처럼 알려줍니다. 시세를 몰라도 손해 보지 않게."
+          title="살 타이밍 나침반"
+          desc="경락가를 평년(최근 30일) 시세와 비교해 '사기 좋은 날'을 신호등처럼. 시세를 몰라도 손해 보지 않게."
         />
         <Feature
-          icon="🌅"
-          title="아침 경매가 그대로"
-          desc="산지→도매법인→중도매인 다단계 이전, 가장 앞단인 경매가를 매일 아침 공개합니다."
+          icon="⚖️"
+          title="유통 거품 지표"
+          desc="소매가가 경락가의 몇 배인지 그대로 공개. 도매로 사면 kg당 얼마 아끼는지까지 계산해 드립니다."
         />
         <Feature
           icon="📊"
