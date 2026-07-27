@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
-import { addEntry, countEntries } from "@/lib/waitlist";
+import { getRepositories } from "@/server/repos";
+import {
+  getWaitlistTotal,
+  registerWaitlist,
+} from "@/server/services/waitlist";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function GET() {
-  return NextResponse.json({ total: await countEntries() });
+  const repos = getRepositories();
+  return NextResponse.json({ total: await getWaitlistTotal(repos) });
 }
 
 export async function POST(request: Request) {
@@ -27,6 +32,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = await addEntry(email, (interest ?? "").slice(0, 40) || "전체");
+  const repos = getRepositories();
+  const result = await registerWaitlist(
+    repos,
+    email,
+    (interest ?? "").slice(0, 40) || "전체",
+  );
   return NextResponse.json(result, { status: 201 });
 }

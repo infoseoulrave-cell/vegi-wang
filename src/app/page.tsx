@@ -1,10 +1,13 @@
 import { PriceBoard } from "@/components/PriceBoard";
 import { WaitlistForm } from "@/components/WaitlistForm";
 import { won } from "@/lib/format";
-import { getPriceFeed } from "@/lib/prices";
+import { getRepositories } from "@/server/repos";
+import { getServedPriceFeed } from "@/server/services/price-feed";
+
+export const revalidate = 600;
 
 export default async function Home() {
-  const feed = await getPriceFeed();
+  const feed = await getServedPriceFeed(getRepositories());
   const cheapCount = feed.items.filter((i) => i.compass === "cheap").length;
   const best = [...feed.items].sort(
     (a, b) => a.deviationRate - b.deviationRate,

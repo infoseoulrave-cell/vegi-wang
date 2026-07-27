@@ -12,15 +12,31 @@
 ## 기술 스택
 
 - Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS v4
+- 백엔드: Route Handlers + `src/server` (수집/집계/서빙) · Postgres(선택) · Vercel Cron
 
 ## 개발
 
 ```bash
 npm install
+cp .env.example .env.local   # 키/DB는 선택 — 없어도 샘플로 동작
 npm run dev      # http://localhost:3000
 npm run lint
 npm run build
+npm test
 ```
+
+## 백엔드
+
+자세한 구조는 [`docs/BACKEND.md`](docs/BACKEND.md).
+
+| 엔드포인트 | 역할 |
+|---|---|
+| `GET /api/prices` | 시세 피드 (DB 우선, 없으면 실시간 폴백) |
+| `GET/POST /api/waitlist` | 니즈 DB |
+| `GET /api/cron/ingest` | 아침 경매가 수집·집계 (Cron) |
+| `GET /api/health` | 스토리지/자격증명 상태 |
+
+스키마: `db/migrations/001_init.sql` (`DATABASE_URL`에 적용).
 
 ## 데이터 소스
 

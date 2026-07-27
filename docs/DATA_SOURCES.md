@@ -66,30 +66,39 @@
 
 ### 2-4. 제공 (Serving)
 - 웹은 `daily_item_price` + `item_baseline`을 읽어 나침반 렌더.
-- `src/lib/prices.ts`의 실시간 외부호출을 **DB read로 교체**(현재는 API 직접 호출 + 샘플 폴백).
+- **구현됨**: `src/server/services/price-feed.ts`가 DB 우선 서빙, 없으면 `src/lib/prices.ts` 실시간 폴백.
+- 상세 구조: [`docs/BACKEND.md`](./BACKEND.md)
 
 ### 2-5. 신뢰성 체크리스트
-- [ ] 멱등 upsert(자연키: 시장+법인+품목+단위+등급+saleDate+seq)
+- [x] 멱등 upsert(자연키: 시장+법인+품목+단위+등급+saleDate+seq+price) — `buildNaturalKey`
+- [x] 수집 job 골격 + Cron (`/api/cron/ingest`, `vercel.json` 08:00 KST)
+- [x] 타임존 KST 고정 (`src/server/domain/date.ts`)
 - [ ] 수집 실패/무데이터 알림
-- [ ] 타임존 KST 고정
 - [ ] 트래픽 한도 모니터링 + 운영계정 신청
 - [ ] 표준코드 최신화
-- [ ] 원천(raw) 보존 → 언제든 재집계 가능
+- [x] 원천(raw) 보존 → 언제든 재집계 가능 (`raw_auction.payload`)
 
 ---
 
 ## 3. 지금 할 일 vs 키 발급 후 할 일
 
 **지금(키 없이) 가능**
-- 코드의 소스 어댑터를 aT API 기준으로 재정렬(현재 garak 어댑터 → aT 어댑터), 파서 단위테스트.
-- DB 스키마/마이그레이션 초안, 수집 job 골격(드라이런), 샘플 폴백 유지.
+- ✅ 소스 어댑터(aT/garak/KAMIS) + 파서 단위테스트
+- ✅ DB 스키마/마이그레이션 (`db/migrations/001_init.sql`)
+- ✅ 수집·집계·서빙 백엔드 (`src/server/`) + 메모리 드라이런 테스트
+- 샘플 폴백 유지
 
-**serviceKey 발급 후**
-- aT 실호출로 응답 컬럼/시장·품목 코드 확정, 파서 매핑 검증.
-- 수집 job 실가동 → `raw_auction` 적재 시작 → 자체 평년가 축적.
+**serviceKey / DATABASE_URL 연결 후**
+- `npm run db:migrate`로 스키마 적용
+- aT 실호출로 응답 컬럼/시장·품목 코드 확정
+- Cron 실가동 → `raw_auction` 적재 → 자체 평년가 축적
 
 ## 4. 환경변수 요약
 ```
+# Storage / Cron
+DATABASE_URL=
+CRON_SECRET=
+
 # 경락가 — 아래 둘 중 하나(코드가 aT 우선, 없으면 garak 사용)
 DATA_GO_KR_SERVICE_KEY=        # (권장·전국) aT 전국 공영도매시장 실시간 경매정보 (+표준코드)
 GARAK_API_ID=                  # (즉시가능·가락) garak 발급 id (예: 10579, 고정)
