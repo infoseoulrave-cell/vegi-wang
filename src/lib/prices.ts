@@ -1,145 +1,80 @@
 import { withSignal } from "./compass";
 import { SAMPLE_ITEMS } from "./sample-data";
+import { fetchGarakAuction } from "./sources/garak";
+import { fetchKamisPrices, type KamisPrice } from "./sources/kamis";
 import type { PriceFeed, PriceItem } from "./types";
 
 /**
- * 오늘의 시세 피드 = [가락시장 경락가(도매)] + [KAMIS 소매가] 조합.
+ * 오늘의 시세 피드 = [가락시장 경락가(공공데이터포털)] + [KAMIS 평년가·소매가] 조합.
  *
- * 동작 방식:
- *  - 기준 카탈로그와 평년(30일) 기준가는 SAMPLE_ITEMS 를 사용한다.
- *  - DATA_GO_KR_SERVICE_KEY 가 있으면 가락시장 경매결과로 오늘 경락가를 덮어쓴다.
- *  - KAMIS_CERT_KEY / KAMIS_CERT_ID 가 있으면 KAMIS 소매가로 덮어쓴다.
- *  - 키가 없거나 실패하면 해당 값은 샘플을 유지한다(플랫폼은 항상 동작).
+ * 필드별 데이터 소스:
+ *  - auctionPrice / auctionPrevPrice ← 가락시장 경매결과 (오늘 / 전일)
+ *  - auctionBaseline(평년 기준가)     ← KAMIS 도매 dpr7(평년가)
+ *  - retailPricePerKg(소매가)         ← KAMIS 소매 dpr1(kg 환산)
  *
- * NOTE: 라이브 응답 필드 매핑과 평년 기준가(별도 이력)는 실제 인증키로 검증 후 확정 필요.
+ * 각 값은 SAMPLE_ITEMS 위에 오버레이되며, 키가 없거나 실패하면 해당 값만 샘플을 유지한다.
  */
 
-const KAMIS_ENDPOINT = "https://www.kamis.or.kr/service/price/xml.do";
-const GARAK_ENDPOINT =
-  "https://apis.data.go.kr/B190001/publicdataapi/service"; // 서울시농수산식품공사 경매결과(예시)
-
-function todayKST(): string {
+function todayKST(): Date {
   const now = new Date();
-  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  return kst.toISOString().slice(0, 10);
+  return new Date(now.getTime() + 9 * 60 * 60 * 1000);
+}
+function iso(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
-type Row = Record<string, unknown>;
-
-function str(v: unknown): string {
-  return typeof v === "string" ? v.trim() : "";
-}
-function num(v: unknown): number {
-  if (typeof v === "number") return v;
-  if (typeof v === "string") {
-    const n = Number(v.replace(/[^0-9.-]/g, ""));
-    return Number.isFinite(n) ? n : 0;
+/** API 품목명과 내부 품목명 매칭 (예: "사과(후지)" ↔ "사과") */
+function pickByName<T>(map: Map<string, T> | null, name: string): T | undefined {
+  if (!map) return undefined;
+  if (map.has(name)) return map.get(name);
+  const base = name.replace(/\(.*?\)/g, "").trim();
+  if (map.has(base)) return map.get(base);
+  for (const [k, v] of map) {
+    if (k === base || k.includes(base) || base.includes(k)) return v;
   }
-  return 0;
-}
-
-/** 가락시장 경매결과 → { 품목명: { price, prev } } */
-async function fetchGarakAuction(): Promise<Map<
-  string,
-  { price: number; prev: number }
-> | null> {
-  const key = process.env.DATA_GO_KR_SERVICE_KEY;
-  if (!key) return null;
-  const params = new URLSearchParams({
-    serviceKey: key,
-    resultType: "json",
-    saleDate: todayKST().replace(/-/g, ""),
-    marketCode: "110001", // 가락도매시장 (예시)
-  });
-  try {
-    const res = await fetch(`${GARAK_ENDPOINT}?${params}`, {
-      next: { revalidate: 600 },
-    });
-    if (!res.ok) return null;
-    const rows = extractRows(await res.json());
-    const map = new Map<string, { price: number; prev: number }>();
-    for (const row of rows) {
-      const name = str(row.pumName) || str(row.item_name) || str(row.itemName);
-      const price = num(row.avgAmt) || num(row.avgPrice) || num(row.price);
-      if (!name || !price) continue;
-      map.set(name, { price, prev: num(row.prevAmt) || price });
-    }
-    return map.size ? map : null;
-  } catch {
-    return null;
-  }
-}
-
-/** KAMIS 일별 소매가 → { 품목명: 원/kg } */
-async function fetchKamisRetail(): Promise<Map<string, number> | null> {
-  const certKey = process.env.KAMIS_CERT_KEY;
-  const certId = process.env.KAMIS_CERT_ID;
-  if (!certKey || !certId) return null;
-  const params = new URLSearchParams({
-    action: "dailyPriceByCategoryList",
-    p_product_cls_code: "01", // 01: 소매
-    p_country_code: "",
-    p_regday: todayKST(),
-    p_convert_kg_yn: "Y",
-    p_item_category_code: "200",
-    p_cert_key: certKey,
-    p_cert_id: certId,
-    p_returntype: "json",
-  });
-  try {
-    const res = await fetch(`${KAMIS_ENDPOINT}?${params}`, {
-      next: { revalidate: 600 },
-    });
-    if (!res.ok) return null;
-    const rows = extractRows(await res.json());
-    const map = new Map<string, number>();
-    for (const row of rows) {
-      const name = str(row.item_name) || str(row.productName);
-      const price = num(row.dpr1) || num(row.price);
-      if (!name || !price) continue;
-      map.set(name, price);
-    }
-    return map.size ? map : null;
-  } catch {
-    return null;
-  }
-}
-
-function extractRows(data: unknown): Row[] {
-  if (!data || typeof data !== "object") return [];
-  const d = data as Record<string, unknown>;
-  const candidates: unknown[] = [
-    d.price,
-    (d.data as { item?: unknown })?.item,
-    ((d.response as { body?: { items?: { item?: unknown } } })?.body?.items)
-      ?.item,
-  ];
-  for (const c of candidates) if (Array.isArray(c)) return c as Row[];
-  return [];
+  return undefined;
 }
 
 export async function getPriceFeed(): Promise<PriceFeed> {
-  const [auction, retail] = await Promise.all([
-    fetchGarakAuction(),
-    fetchKamisRetail(),
+  const today = todayKST();
+  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+  const todayISO = iso(today);
+  const yestISO = iso(yesterday);
+
+  const categories = SAMPLE_ITEMS.map((i) => i.category);
+
+  // 가락 경락가(오늘/전일) + KAMIS(평년·소매)를 병렬 조회
+  const [auctionToday, auctionPrev, kamis] = await Promise.all([
+    Promise.all(SAMPLE_ITEMS.map((i) => fetchGarakAuction(i.name, todayISO))),
+    Promise.all(SAMPLE_ITEMS.map((i) => fetchGarakAuction(i.name, yestISO))),
+    fetchKamisPrices(categories, todayISO),
   ]);
 
-  const items = SAMPLE_ITEMS.map((base): PriceItem => {
-    const a = auction?.get(base.name);
-    const r = retail?.get(base.name);
+  let auctionLive = false;
+  let retailLive = false;
+
+  const items = SAMPLE_ITEMS.map((base, idx): PriceItem => {
+    const aToday = auctionToday[idx];
+    const aPrev = auctionPrev[idx];
+    const k: KamisPrice | undefined = pickByName(kamis, base.name);
+
+    if (aToday != null) auctionLive = true;
+    if (k?.retailPerKg) retailLive = true;
+
     return {
       ...base,
-      auctionPrice: a?.price ?? base.auctionPrice,
-      auctionPrevPrice: a?.prev ?? base.auctionPrevPrice,
-      retailPricePerKg: r ?? base.retailPricePerKg,
+      auctionPrice: aToday ?? base.auctionPrice,
+      auctionPrevPrice: aPrev ?? base.auctionPrevPrice,
+      auctionBaseline: k?.baseline ?? base.auctionBaseline,
+      retailPricePerKg: k?.retailPerKg ?? base.retailPricePerKg,
     };
   }).map(withSignal);
 
   return {
-    date: todayKST(),
+    date: todayISO,
     market: "서울 가락동 농수산물도매시장",
-    auctionSource: auction ? "live" : "sample",
-    retailSource: retail ? "live" : "sample",
+    auctionSource: auctionLive ? "live" : "sample",
+    retailSource: retailLive ? "live" : "sample",
     items,
   };
 }
