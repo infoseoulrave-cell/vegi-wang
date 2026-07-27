@@ -1,7 +1,14 @@
+import Image from "next/image";
 import { PriceBoard } from "@/components/PriceBoard";
 import { WaitlistForm } from "@/components/WaitlistForm";
 import { won } from "@/lib/format";
 import { getPriceFeed } from "@/lib/prices";
+
+const CATEGORY_TILES = [
+  { key: "채소", img: "/images/cat_vegetable.png", desc: "배추·무·대파·감자" },
+  { key: "과일", img: "/images/cat_fruit.png", desc: "사과·배·토마토·딸기" },
+  { key: "수산", img: "/images/cat_seafood.png", desc: "고등어·오징어·새우" },
+];
 
 export default async function Home() {
   const feed = await getPriceFeed();
@@ -12,13 +19,11 @@ export default async function Home() {
   const bestSaving = [...feed.items].sort(
     (a, b) => b.savingPerUnit - a.savingPerUnit,
   )[0];
-  const isSample =
-    feed.auctionSource === "sample" || feed.retailSource === "sample";
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-5 pb-24">
+    <main className="w-full">
       {/* 헤더 */}
-      <header className="flex items-center justify-between py-6">
+      <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5">
         <div className="flex items-center gap-2">
           <span className="text-2xl">🥬</span>
           <span className="text-xl font-extrabold tracking-tight">베지왕</span>
@@ -31,61 +36,118 @@ export default async function Home() {
         </a>
       </header>
 
-      {/* 히어로 */}
-      <section className="pt-8 pb-14 text-center">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-brand/10 px-3 py-1 text-sm font-semibold text-brand-dark ring-1 ring-brand/20">
-          🧭 오늘의 농수산물 가격 나침반
-        </span>
-        <h1 className="mx-auto mt-5 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">
-          <span className="text-brand">가락시장 실제 경매 낙찰가</span>를
-          확인해보세요
-        </h1>
-        <p className="mx-auto mt-4 max-w-2xl text-lg text-foreground/60">
-          매일 아침 도매시장 <b>경락가</b>를 <b>1개 기준 가격</b>으로 번역해
-          전국 소매가와 나란히 비교합니다. 지금이 평년보다 싼지, 소매에 거품이
-          얼마나 붙었는지 한눈에 보고 현명하게 장을 보세요.
-        </p>
+      {/* 히어로 (사진 기반) */}
+      <section className="mx-auto w-full max-w-6xl px-5">
+        <div className="relative h-[460px] w-full overflow-hidden rounded-3xl sm:h-[560px]">
+          <Image
+            src="/images/hero_market.png"
+            alt="가락시장 새벽 농수산물"
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/55 to-black/20" />
+          <div className="absolute inset-0 flex flex-col justify-center gap-5 p-7 sm:p-14">
+            <span className="w-fit rounded-full bg-white/15 px-3 py-1 text-sm font-semibold text-white backdrop-blur-sm ring-1 ring-white/25">
+              🧭 오늘의 농수산물 가격 나침반
+            </span>
+            <h1 className="max-w-2xl text-3xl font-extrabold leading-tight tracking-tight text-white sm:text-5xl">
+              가락시장 <span className="text-emerald-300">실제 경매가</span>,
+              <br />
+              오늘 <span className="text-emerald-300">1개 얼마</span>인지
+              알려드릴게요
+            </h1>
+            <p className="max-w-xl text-base text-white/85 sm:text-lg">
+              매일 아침 도매시장 경락가를 1개·1포기·1마리 기준으로 번역해,
+              소매가와 나란히 보여드립니다. 지금이 사기 좋은 날인지 한눈에.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <a
+                href="#board"
+                className="rounded-full bg-brand px-6 py-3 font-semibold text-white shadow-lg transition hover:bg-brand-dark"
+              >
+                오늘 시세 보기
+              </a>
+              <a
+                href="#waitlist"
+                className="rounded-full bg-white/90 px-6 py-3 font-semibold text-foreground shadow-lg transition hover:bg-white"
+              >
+                아침 알림 받기
+              </a>
+            </div>
+            <div className="nums flex flex-wrap gap-2 pt-1">
+              <HeroChip label="기준일" value={feed.date} />
+              <HeroChip label="사기 좋은 품목" value={`${cheapCount}개`} />
+              {best && (
+                <HeroChip
+                  label="가장 저렴"
+                  value={`${best.name} ${best.deviationRate}%`}
+                />
+              )}
+              {bestSaving && (
+                <HeroChip
+                  label="절약 최대"
+                  value={`${bestSaving.name} ${bestSaving.consumerUnit}당 ${won(bestSaving.savingPerUnit)}`}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
 
-        <div className="mx-auto mt-8 grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label="오늘 기준일" value={feed.date} />
-          <Stat label="사기 좋은 품목" value={`${cheapCount}개`} />
-          <Stat
-            label="가장 저렴(평년比)"
-            value={best ? best.name : "-"}
-            hint={best ? `${best.deviationRate}%` : undefined}
-          />
-          <Stat
-            label="도매 절약 최대"
-            value={bestSaving ? bestSaving.name : "-"}
-            hint={
-              bestSaving
-                ? `${bestSaving.consumerUnit}당 ${won(bestSaving.savingPerUnit)}`
-                : undefined
-            }
-          />
+      {/* 카테고리 사진 타일 */}
+      <section className="mx-auto mt-10 w-full max-w-6xl px-5">
+        <div className="grid grid-cols-3 gap-3 sm:gap-4">
+          {CATEGORY_TILES.map((c) => (
+            <a
+              key={c.key}
+              href="#board"
+              className="group relative aspect-square overflow-hidden rounded-2xl ring-1 ring-black/5"
+            >
+              <Image
+                src={c.img}
+                alt={c.key}
+                fill
+                sizes="(max-width: 640px) 33vw, 360px"
+                className="object-cover transition duration-300 group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+              <div className="absolute inset-x-0 bottom-0 p-3 sm:p-4">
+                <p className="text-lg font-bold text-white sm:text-xl">
+                  {c.key}
+                </p>
+                <p className="hidden text-xs text-white/80 sm:block">
+                  {c.desc}
+                </p>
+              </div>
+            </a>
+          ))}
         </div>
       </section>
 
       {/* 경매가 보드 */}
-      <section id="board" className="scroll-mt-8">
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h2 className="text-2xl font-bold">오늘의 경락가 · 소매가</h2>
-            <p className="mt-1 text-sm text-foreground/50">
-              {feed.market} · 소매가 출처 KAMIS
-              {isSample && (
-                <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
-                  샘플 데이터 (실데이터 연동 대기 중)
-                </span>
-              )}
-            </p>
-          </div>
+      <section
+        id="board"
+        className="mx-auto mt-16 w-full max-w-6xl scroll-mt-6 px-5"
+      >
+        <div className="mb-5">
+          <h2 className="text-2xl font-bold">오늘의 경락가 · 소매가</h2>
+          <p className="mt-1 text-sm text-foreground/50">
+            {feed.market} · 1개 기준 · 소매가 KAMIS
+            {(feed.auctionSource === "sample" ||
+              feed.retailSource === "sample") && (
+              <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
+                일부 샘플 데이터
+              </span>
+            )}
+          </p>
         </div>
         <PriceBoard items={feed.items} />
       </section>
 
       {/* 왜 베지왕 */}
-      <section className="mt-20 grid gap-4 sm:grid-cols-3">
+      <section className="mx-auto mt-20 grid w-full max-w-6xl gap-4 px-5 sm:grid-cols-3">
         <Feature
           icon="🧭"
           title="살 타이밍 나침반"
@@ -94,7 +156,7 @@ export default async function Home() {
         <Feature
           icon="⚖️"
           title="유통 거품 지표"
-          desc="소매가가 경락가의 몇 배인지 그대로 공개. 1개(1포기·1마리)당 얼마 아끼는지까지 계산해 드립니다."
+          desc="소매가가 경락가의 몇 배인지 공개. 1개(1포기·1마리)당 얼마 아끼는지까지 계산해 드립니다."
         />
         <Feature
           icon="📊"
@@ -106,22 +168,25 @@ export default async function Home() {
       {/* 대기자 등록 */}
       <section
         id="waitlist"
-        className="mt-20 scroll-mt-8 rounded-3xl bg-white p-8 shadow-sm ring-1 ring-black/5 sm:p-10"
+        className="mx-auto mt-20 w-full max-w-6xl scroll-mt-6 px-5"
       >
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-2xl font-bold sm:text-3xl">
-            매일 아침, 시세 나침반을 메일로 받아보세요
-          </h2>
-          <p className="mt-2 text-foreground/60">
-            관심 품목이 &lsquo;사기 좋은 날&rsquo;이 되면 가장 먼저 알려드립니다.
-          </p>
-        </div>
-        <div className="mx-auto mt-6 max-w-xl">
-          <WaitlistForm />
+        <div className="rounded-3xl bg-white p-8 shadow-sm ring-1 ring-black/5 sm:p-10">
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 className="text-2xl font-bold sm:text-3xl">
+              매일 아침, 시세 나침반을 메일로 받아보세요
+            </h2>
+            <p className="mt-2 text-foreground/60">
+              관심 품목이 &lsquo;사기 좋은 날&rsquo;이 되면 가장 먼저
+              알려드립니다.
+            </p>
+          </div>
+          <div className="mx-auto mt-6 max-w-xl">
+            <WaitlistForm />
+          </div>
         </div>
       </section>
 
-      <footer className="mt-16 border-t border-black/5 pt-8 text-center">
+      <footer className="mx-auto mt-16 w-full max-w-6xl border-t border-black/5 px-5 py-8 text-center">
         <p className="text-sm font-semibold text-foreground/60">
           🥬 베지왕 · 농수산물 유통을 소비자 편으로
         </p>
@@ -134,21 +199,12 @@ export default async function Home() {
   );
 }
 
-function Stat({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-}) {
+function HeroChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="nums rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-      <p className="text-xs text-foreground/50">{label}</p>
-      <p className="mt-1 text-lg font-bold">{value}</p>
-      {hint && <p className="text-xs text-emerald-600">{hint}</p>}
-    </div>
+    <span className="rounded-lg bg-white/15 px-3 py-1.5 text-sm text-white backdrop-blur-sm ring-1 ring-white/20">
+      <span className="text-white/60">{label} </span>
+      <span className="font-semibold">{value}</span>
+    </span>
   );
 }
 
