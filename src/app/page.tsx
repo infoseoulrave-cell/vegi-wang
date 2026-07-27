@@ -10,7 +10,7 @@ export default async function Home() {
     (a, b) => a.deviationRate - b.deviationRate,
   )[0];
   const bestSaving = [...feed.items].sort(
-    (a, b) => b.savingPerKg - a.savingPerKg,
+    (a, b) => b.savingPerUnit - a.savingPerUnit,
   )[0];
   const isSample =
     feed.auctionSource === "sample" || feed.retailSource === "sample";
@@ -41,9 +41,9 @@ export default async function Home() {
           확인해보세요
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-lg text-foreground/60">
-          매일 아침 도매시장 <b>경락가</b>와 전국 <b>소매가</b>를 나란히
-          비교합니다. 지금이 평년보다 싼지, 소매에 거품이 얼마나 붙었는지 한눈에
-          보고 현명하게 장을 보세요.
+          매일 아침 도매시장 <b>경락가</b>를 <b>1개 기준 가격</b>으로 번역해
+          전국 소매가와 나란히 비교합니다. 지금이 평년보다 싼지, 소매에 거품이
+          얼마나 붙었는지 한눈에 보고 현명하게 장을 보세요.
         </p>
 
         <div className="mx-auto mt-8 grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-4">
@@ -57,7 +57,11 @@ export default async function Home() {
           <Stat
             label="도매 절약 최대"
             value={bestSaving ? bestSaving.name : "-"}
-            hint={bestSaving ? `kg당 ${won(bestSaving.savingPerKg)}` : undefined}
+            hint={
+              bestSaving
+                ? `${bestSaving.consumerUnit}당 ${won(bestSaving.savingPerUnit)}`
+                : undefined
+            }
           />
         </div>
       </section>
@@ -90,7 +94,7 @@ export default async function Home() {
         <Feature
           icon="⚖️"
           title="유통 거품 지표"
-          desc="소매가가 경락가의 몇 배인지 그대로 공개. 도매로 사면 kg당 얼마 아끼는지까지 계산해 드립니다."
+          desc="소매가가 경락가의 몇 배인지 그대로 공개. 1개(1포기·1마리)당 얼마 아끼는지까지 계산해 드립니다."
         />
         <Feature
           icon="📊"

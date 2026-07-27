@@ -9,6 +9,8 @@
  *   파서는 여러 후보 키를 관대하게 수용한다.
  */
 
+import { weightedPerKg } from "./unit";
+
 const ENDPOINT =
   "http://apis.data.go.kr/B552895/openapi/service/MallRltmInfoService/getMallRltmInfo";
 
@@ -18,6 +20,7 @@ export const GARAK_WHSAL_CD = "110001";
 export interface AtAuctionRow {
   itemName: string;
   price: number;
+  qty: number;
   unit: string;
   grade: string;
   origin: string;
@@ -95,6 +98,7 @@ export function parseAtItems(json: unknown): AtAuctionRow[] {
     rows.push({
       itemName,
       price,
+      qty: firstNum(it, ["qty", "totQty", "sanchulYange", "gdsQty"]),
       unit: firstStr(it, ["unitNm", "unit_nm", "unitCd", "danqUnit"]),
       grade: firstStr(it, ["grdNm", "grd_nm", "grade"]),
       origin: firstStr(it, ["plorNm", "plor_nm", "sanji", "origin"]),
@@ -103,22 +107,24 @@ export function parseAtItems(json: unknown): AtAuctionRow[] {
   return rows;
 }
 
-/** 품목명별 평균 경락가로 집계 (순수 함수, 테스트 대상) */
-export function aggregateAtByItem(rows: AtAuctionRow[]): Map<string, number> {
-  const acc = new Map<string, { sum: number; n: number }>();
+/** 품목명별 **원/kg**(거래단량 정규화 + 수량 가중)로 집계 (순수 함수, 테스트 대상) */
+export function aggregateAtPerKg(rows: AtAuctionRow[]): Map<string, number> {
+  const byName = new Map<string, AtAuctionRow[]>();
   for (const r of rows) {
-    const cur = acc.get(r.itemName) ?? { sum: 0, n: 0 };
-    cur.sum += r.price;
-    cur.n += 1;
-    acc.set(r.itemName, cur);
+    const arr = byName.get(r.itemName) ?? [];
+    arr.push(r);
+    byName.set(r.itemName, arr);
   }
   const out = new Map<string, number>();
-  for (const [k, { sum, n }] of acc) out.set(k, Math.round(sum / n));
+  for (const [name, list] of byName) {
+    const perKg = weightedPerKg(list);
+    if (perKg != null) out.set(name, perKg);
+  }
   return out;
 }
 
 /**
- * 가락시장 오늘 경락가를 품목명 기준 평균으로 조회한다.
+ * 가락시장 오늘 경락가를 품목명 기준 **원/kg**로 조회한다.
  * DATA_GO_KR_SERVICE_KEY 가 없거나 실패하면 null.
  */
 export async function fetchAtAuction(
@@ -140,8 +146,7 @@ export async function fetchAtAuction(
       next: { revalidate: 600 },
     });
     if (!res.ok) return null;
-    const rows = parseAtItems(await res.json());
-    const agg = aggregateAtByItem(rows);
+    const agg = aggregateAtPerKg(parseAtItems(await res.json()));
     return agg.size ? agg : null;
   } catch {
     return null;

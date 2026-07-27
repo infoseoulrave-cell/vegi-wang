@@ -1,7 +1,7 @@
 import { withSignal } from "./compass";
 import { SAMPLE_ITEMS } from "./sample-data";
 import { fetchAtAuction } from "./sources/atMarket";
-import { fetchGarakAuction } from "./sources/garak";
+import { fetchGarakAuctionPerKg } from "./sources/garak";
 import { fetchKamisPrices, type KamisPrice } from "./sources/kamis";
 import type { PriceFeed, PriceItem } from "./types";
 
@@ -34,10 +34,10 @@ function pickByName<T>(map: Map<string, T> | null, name: string): T | undefined 
 }
 
 /**
- * 특정일 경락가를 품목명 Map으로 해석한다.
+ * 특정일 경락가를 품목명→**원/kg** Map으로 해석한다.
  * 우선순위: aT 전국 도매시장(serviceKey) → 가락 경매결과(GARAK 계정) → 없음(null).
  */
-async function resolveAuction(
+async function resolveAuctionPerKg(
   names: string[],
   dateISO: string,
 ): Promise<Map<string, number> | null> {
@@ -45,7 +45,7 @@ async function resolveAuction(
   if (at) return at;
 
   const garak = await Promise.all(
-    names.map((n) => fetchGarakAuction(n, dateISO)),
+    names.map((n) => fetchGarakAuctionPerKg(n, dateISO)),
   );
   const map = new Map<string, number>();
   names.forEach((n, i) => {
@@ -65,8 +65,8 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
   const categories = SAMPLE_ITEMS.map((i) => i.category);
 
   const [auctionToday, auctionPrev, kamis] = await Promise.all([
-    resolveAuction(names, todayISO),
-    resolveAuction(names, yestISO),
+    resolveAuctionPerKg(names, todayISO),
+    resolveAuctionPerKg(names, yestISO),
     fetchKamisPrices(categories, todayISO),
   ]);
 
@@ -74,17 +74,24 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
   let retailLive = false;
 
   const items = SAMPLE_ITEMS.map((base): PriceItem => {
-    const aToday = pickByName(auctionToday, base.name);
-    const aPrev = pickByName(auctionPrev, base.name);
+    // 라이브 값은 원/kg → 품목의 대표 거래단위(weightKg)로 환산해 경락가 산출
+    const perKgToday = pickByName(auctionToday, base.name);
+    const perKgPrev = pickByName(auctionPrev, base.name);
     const k: KamisPrice | undefined = pickByName(kamis, base.name);
 
-    if (aToday != null) auctionLive = true;
+    if (perKgToday != null) auctionLive = true;
     if (k?.retailPerKg) retailLive = true;
 
     return {
       ...base,
-      auctionPrice: aToday ?? base.auctionPrice,
-      auctionPrevPrice: aPrev ?? base.auctionPrevPrice,
+      auctionPrice:
+        perKgToday != null
+          ? Math.round(perKgToday * base.weightKg)
+          : base.auctionPrice,
+      auctionPrevPrice:
+        perKgPrev != null
+          ? Math.round(perKgPrev * base.weightKg)
+          : base.auctionPrevPrice,
       auctionBaseline: k?.baseline ?? base.auctionBaseline,
       retailPricePerKg: k?.retailPerKg ?? base.retailPricePerKg,
     };

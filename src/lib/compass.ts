@@ -108,6 +108,13 @@ export function withSignal(item: PriceItem): PriceItemWithSignal {
   const retailGap = toRetailGap(retailMultiple);
   const savingPerKg = Math.max(item.retailPricePerKg - auctionPerKg, 0);
 
+  // 소비자 단위(1개 등) 기준 환산 — 소비자는 kg이 아니라 개/포기/마리로 이해한다
+  const consumerAuctionPrice = Math.round(auctionPerKg * item.kgPerConsumerUnit);
+  const consumerRetailPrice = Math.round(
+    item.retailPricePerKg * item.kgPerConsumerUnit,
+  );
+  const savingPerUnit = Math.max(consumerRetailPrice - consumerAuctionPrice, 0);
+
   return {
     ...item,
     auctionPerKg,
@@ -117,6 +124,9 @@ export function withSignal(item: PriceItem): PriceItemWithSignal {
     retailMultiple,
     retailGap,
     savingPerKg,
+    consumerAuctionPrice,
+    consumerRetailPrice,
+    savingPerUnit,
     recommendation: buildRecommendation(compass, retailGap),
   };
 }

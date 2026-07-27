@@ -25,6 +25,8 @@ describe("withSignal (경락가 + 소매가 결합)", () => {
     category: "채소",
     auctionUnit: "10kg 그물망",
     weightKg: 10,
+    consumerUnit: "1포기",
+    kgPerConsumerUnit: 2.5,
     grade: "상",
     origin: "강원 평창",
     auctionPrice: 9800,
@@ -42,5 +44,12 @@ describe("withSignal (경락가 + 소매가 결합)", () => {
     expect(s.retailGap).toBe("bubble");
     expect(s.savingPerKg).toBe(1520); // 2500 - 980
     expect(s.recommendation).toContain("도매시장·산지직송");
+  });
+
+  it("소비자 단위(1포기) 기준 도매가·소매가·절약액을 계산한다", () => {
+    const s = withSignal(cabbage);
+    expect(s.consumerAuctionPrice).toBe(2450); // 980 × 2.5kg
+    expect(s.consumerRetailPrice).toBe(6250); // 2500 × 2.5kg
+    expect(s.savingPerUnit).toBe(3800); // 6250 - 2450
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateAtByItem, parseAtItems } from "./atMarket";
+import { aggregateAtPerKg, parseAtItems } from "./atMarket";
 
 // getMallRltmInfo JSON 응답을 본뜬 대표 페이로드
 const SAMPLE = {
@@ -38,17 +38,17 @@ describe("parseAtItems", () => {
       response: { body: { items: { item: { gdsSclsfNm: "무", cost: "14200" } } } },
     };
     expect(parseAtItems(single)).toEqual([
-      { itemName: "무", price: 14200, unit: "", grade: "", origin: "" },
+      { itemName: "무", price: 14200, qty: 0, unit: "", grade: "", origin: "" },
     ]);
     expect(parseAtItems({})).toEqual([]);
     expect(parseAtItems(null)).toEqual([]);
   });
 });
 
-describe("aggregateAtByItem", () => {
-  it("품목명별 평균 경락가를 계산한다", () => {
-    const agg = aggregateAtByItem(parseAtItems(SAMPLE));
-    expect(agg.get("배추")).toBe(10000); // (9800 + 10200) / 2
-    expect(agg.get("사과")).toBe(58000);
+describe("aggregateAtPerKg", () => {
+  it("거래단량(unitNm)을 원/kg로 환산해 품목별 집계", () => {
+    const agg = aggregateAtPerKg(parseAtItems(SAMPLE));
+    expect(agg.get("배추")).toBe(1000); // (9800/10 + 10200/10) / 2
+    expect(agg.get("사과")).toBe(5800); // 58000 / 10kg
   });
 });

@@ -1,4 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
+import { weightedPerKg } from "./unit";
 
 /**
  * 가락시장 경매결과 (서울시농수산식품공사)
@@ -32,6 +33,7 @@ export interface GarakRow {
   unit: string;
   grade: string;
   price: number;
+  qty: number;
   origin: string;
   date: string;
 }
@@ -89,6 +91,7 @@ function rowsToGarak(parsed: unknown): GarakRow[] {
       unit: toStr(get(r, "UUN")),
       grade: toStr(get(r, "DDD")),
       price,
+      qty: toNum(get(r, "QTY")),
       origin: toStr(get(r, "SSANGI")),
       date: toStr(get(r, "ADJ_DT")),
     });
@@ -160,7 +163,11 @@ async function fetchCorp(
  * 특정 품목의 특정일 평균 경락가(가락 6개 법인 합산)를 조회한다. 실패/무데이터 시 null.
  * 인증정보(GARAK_API_ID/PW, GARAK_AUCTION_DATAID)가 없으면 null.
  */
-export async function fetchGarakAuction(
+/**
+ * 특정 품목의 특정일 **원/kg** 경락가(가락 6개 법인 합산, 거래단량 정규화 + 수량 가중)를 조회한다.
+ * 실패/무데이터/인증정보 없음 → null.
+ */
+export async function fetchGarakAuctionPerKg(
   itemName: string,
   dateISO: string,
 ): Promise<number | null> {
@@ -170,9 +177,7 @@ export async function fetchGarakAuction(
   const perCorp = await Promise.all(
     GARAK_CORP_CODES.map((b) => fetchCorp(query, dateISO, b)),
   );
-  const all = perCorp.flat();
-  if (all.length === 0) return null;
-  // PUMMOK이 질의어와 정확히 일치하는 품목만 채택(예: "사과" 질의 시 "대추(사과대추)" 배제)
-  const agg = aggregateByPummok(all);
-  return agg.get(query) ?? agg.get(itemName) ?? null;
+  // PUMMOK이 질의어와 정확히 일치하는 행만 채택(예: "사과" 질의 시 "대추(사과대추)" 배제)
+  const rows = perCorp.flat().filter((r) => r.pummok === query);
+  return weightedPerKg(rows);
 }
