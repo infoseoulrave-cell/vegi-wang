@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateByPummok, parseGarakXml } from "./garak";
+import { aggregateByPummok, parseGarakJson, parseGarakXml } from "./garak";
 
 const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <response>
@@ -47,5 +47,26 @@ describe("aggregateByPummok", () => {
     const agg = aggregateByPummok(parseGarakXml(SAMPLE_XML));
     expect(agg.get("사과")).toBe(56500); // (58000 + 55000) / 2
     expect(agg.get("배추")).toBe(9800);
+  });
+});
+
+describe("parseGarakJson (dataJsonOpen.do)", () => {
+  it("JSON 배열/대소문자 키에서도 경락가를 추출한다", () => {
+    const json = {
+      list: [
+        { PUMMOK: "사과", PUMJONG: "후지", UUN: "10kg", DDD: "특", PPRICE: 58000, SSANGI: "경북", ADJ_DT: "20241030" },
+        { pummok: "사과", pprice: "55,000", ssangi: "경북" },
+      ],
+    };
+    const rows = parseGarakJson(json);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].price).toBe(58000);
+    expect(rows[1].price).toBe(55000);
+    expect(aggregateByPummok(rows).get("사과")).toBe(56500);
+  });
+
+  it("빈 JSON은 빈 배열", () => {
+    expect(parseGarakJson({})).toEqual([]);
+    expect(parseGarakJson({ list: [] })).toEqual([]);
   });
 });

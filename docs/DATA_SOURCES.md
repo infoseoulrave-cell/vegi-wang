@@ -10,8 +10,10 @@
 |---|---|---|---|
 | ★ 필수 | **공공데이터포털 serviceKey** → aT `전국 공영도매시장 실시간 경매정보` | 전국 32개 도매시장(가락 포함, 청과+수산)의 **실제 경락가**를 serviceKey 하나로 | 신청 필요 |
 | ★ 필수 | **KAMIS 인증키**(`p_cert_key`+`p_cert_id`) | 평년가(`dpr7`)·소매가(`dpr1`) → 나침반 기준·유통거품 비교 | ✅ 등록 완료 |
+| ★ 대안(즉시가능) | garak.co.kr 경매결과 (`id/passwd/dataid`) | 발급 완료 — 가락시장 경락가를 지금 바로 사용 가능 | ✅ 사용 가능 |
 | 선택 | 해수부 `위판장별 위탁판매 현황`, 부산 `국제수산물도매시장 경락정보` | 산지 위판(어시장) 가격까지 확장 시 | 나중 |
-| 폐기 | garak.co.kr `id/passwd/dataid` (경매결과) | aT 통합 API로 대체 (2025-02 data.go.kr 이관) | 사용 안 함 |
+
+> 코드 우선순위: **aT serviceKey 있으면 aT → 없으면 garak 계정 → 없으면 샘플**. garak 인증정보가 발급됐다면 serviceKey 없이도 가락 경락가가 바로 동작.
 
 ---
 
@@ -88,10 +90,19 @@
 
 ## 4. 환경변수 요약
 ```
-# 필수
-DATA_GO_KR_SERVICE_KEY=        # aT 전국 공영도매시장 실시간 경매정보 (+표준코드)
+# 경락가 — 아래 둘 중 하나(코드가 aT 우선, 없으면 garak 사용)
+DATA_GO_KR_SERVICE_KEY=        # (권장·전국) aT 전국 공영도매시장 실시간 경매정보 (+표준코드)
+GARAK_API_ID=                  # (즉시가능·가락) garak 발급 id (예: 10579, 고정)
+GARAK_API_PW=                  # garak 발급 passwd (고정) — 절대 코드/저장소에 넣지 말 것
+GARAK_AUCTION_DATAID=          # 경매결과 dataid (예: data12)
+
+# 평년가·소매가
 KAMIS_CERT_KEY=                # KAMIS 인증키
 KAMIS_CERT_ID=                 # KAMIS 요청자 ID
-# 선택(수산 산지 위판 확장 시)
-# 위 serviceKey로 해수부/부산 API도 공용 가능(포털 단일 키)
 ```
+
+### garak 경매결과 호출 스펙(발급 확인)
+- JSON: `http://www.garak.co.kr/homepage/publicdata/dataJsonOpen.do` (XML: `dataOpen.do`)
+- 파라미터: `id`,`passwd`,`dataid`,`pagesize`,`pageidx`,`portal.templet=false`,`s_date`(YYYYMMDD),`s_bubin`(법인코드·필수),`s_pummok`(품목명·필수),`s_sangi`(선택)
+- 법인코드: 서울청과 11000101 / 농협(공) 11000102 / 중앙청과 11000103 / 동부팜청과 11000104 / 한국청과 11000105 / 대아청과 11000106
+- `s_bubin`이 필수 → 코드는 6개 법인을 순회해 품목별 경락가를 합산(평균)한다.

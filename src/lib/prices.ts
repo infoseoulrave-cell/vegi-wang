@@ -1,5 +1,6 @@
 import { withSignal } from "./compass";
 import { SAMPLE_ITEMS } from "./sample-data";
+import { fetchAtAuction } from "./sources/atMarket";
 import { fetchGarakAuction } from "./sources/garak";
 import { fetchKamisPrices, type KamisPrice } from "./sources/kamis";
 import type { PriceFeed, PriceItem } from "./types";
@@ -35,27 +36,49 @@ function pickByName<T>(map: Map<string, T> | null, name: string): T | undefined 
   return undefined;
 }
 
+/**
+ * 특정일 경락가를 품목명 Map으로 해석한다.
+ * 우선순위: aT 전국 도매시장(serviceKey) → 가락 경매결과(GARAK 계정) → 없음(null).
+ */
+async function resolveAuction(
+  names: string[],
+  dateISO: string,
+): Promise<Map<string, number> | null> {
+  const at = await fetchAtAuction(dateISO);
+  if (at) return at;
+
+  const garak = await Promise.all(
+    names.map((n) => fetchGarakAuction(n, dateISO)),
+  );
+  const map = new Map<string, number>();
+  names.forEach((n, i) => {
+    const v = garak[i];
+    if (v != null) map.set(n, v);
+  });
+  return map.size ? map : null;
+}
+
 export async function getPriceFeed(): Promise<PriceFeed> {
   const today = todayKST();
   const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
   const todayISO = iso(today);
   const yestISO = iso(yesterday);
 
+  const names = SAMPLE_ITEMS.map((i) => i.name);
   const categories = SAMPLE_ITEMS.map((i) => i.category);
 
-  // 가락 경락가(오늘/전일) + KAMIS(평년·소매)를 병렬 조회
   const [auctionToday, auctionPrev, kamis] = await Promise.all([
-    Promise.all(SAMPLE_ITEMS.map((i) => fetchGarakAuction(i.name, todayISO))),
-    Promise.all(SAMPLE_ITEMS.map((i) => fetchGarakAuction(i.name, yestISO))),
+    resolveAuction(names, todayISO),
+    resolveAuction(names, yestISO),
     fetchKamisPrices(categories, todayISO),
   ]);
 
   let auctionLive = false;
   let retailLive = false;
 
-  const items = SAMPLE_ITEMS.map((base, idx): PriceItem => {
-    const aToday = auctionToday[idx];
-    const aPrev = auctionPrev[idx];
+  const items = SAMPLE_ITEMS.map((base): PriceItem => {
+    const aToday = pickByName(auctionToday, base.name);
+    const aPrev = pickByName(auctionPrev, base.name);
     const k: KamisPrice | undefined = pickByName(kamis, base.name);
 
     if (aToday != null) auctionLive = true;

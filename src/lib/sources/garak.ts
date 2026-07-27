@@ -2,15 +2,29 @@ import { XMLParser } from "fast-xml-parser";
 
 /**
  * 가락시장 경매결과 (서울시농수산식품공사)
- * 요청: http://www.garak.co.kr/publicdata/dataOpen.do
- *   id, passwd, dataid(서비스ID), s_date(YYYYMMDD), s_pummok(품목명), pagesize, pageidx
- * 응답: XML, 반복 행에 PUMMOK(품목명) / PUMJONG(품종) / UUN(거래단량) /
- *   DDD(등급) / PPRICE(경락가) / SSANGI(산지) / ADJ_DT(정산일자)
+ * 요청(JSON): http://www.garak.co.kr/homepage/publicdata/dataJsonOpen.do
+ *   (XML: .../dataOpen.do)
+ *   id, passwd(발급 고정값), dataid, pagesize, pageidx, portal.templet=false,
+ *   s_date(YYYYMMDD, 필수), s_bubin(법인코드, 필수), s_pummok(품목명, 필수), s_sangi(산지, 선택)
+ * 응답 행 필드: PUMMOK(품목명) / PUMJONG(품종) / UUN(거래단량) / DDD(등급) /
+ *   PPRICE(경락가) / SSANGI(산지) / ADJ_DT(정산일자)
  *
- * NOTE: 실제 필드/루트 태그는 발급 계정으로 응답을 받아 최종 확인 필요.
+ * s_bubin(법인)이 필수이므로 가락 6개 청과 법인을 순회해 합산한다.
+ * 인증정보(id/passwd/dataid)는 절대 코드에 하드코딩하지 않고 환경변수로만 주입한다.
  */
 
-const ENDPOINT = "http://www.garak.co.kr/publicdata/dataOpen.do";
+const JSON_ENDPOINT =
+  "http://www.garak.co.kr/homepage/publicdata/dataJsonOpen.do";
+
+/** 가락 청과 도매시장법인 코드 */
+export const GARAK_CORP_CODES = [
+  "11000101", // 서울청과
+  "11000102", // 농협(공)
+  "11000103", // 중앙청과
+  "11000104", // 동부팜청과
+  "11000105", // 한국청과
+  "11000106", // 대아청과
+];
 
 export interface GarakRow {
   pummok: string;
@@ -36,7 +50,15 @@ function toStr(v: unknown): string {
   return v == null ? "" : String(v).trim();
 }
 
-/** 파싱된 객체 트리에서 PPRICE(경락가)를 가진 행 객체들을 모두 수집한다. */
+/** 대소문자 무시하고 키 조회 */
+function get(o: Record<string, unknown>, key: string): unknown {
+  if (key in o) return o[key];
+  const lower = key.toLowerCase();
+  for (const k of Object.keys(o)) if (k.toLowerCase() === lower) return o[k];
+  return undefined;
+}
+
+/** 파싱된 객체 트리에서 경락가(PPRICE) 행 객체들을 수집 (XML/JSON 공통) */
 function collectRows(node: unknown, out: Record<string, unknown>[]): void {
   if (Array.isArray(node)) {
     for (const n of node) collectRows(n, out);
@@ -44,14 +66,13 @@ function collectRows(node: unknown, out: Record<string, unknown>[]): void {
   }
   if (node && typeof node === "object") {
     const obj = node as Record<string, unknown>;
-    if ("PPRICE" in obj || "PUMMOK" in obj) out.push(obj);
+    const keys = Object.keys(obj).map((k) => k.toLowerCase());
+    if (keys.includes("pprice") || keys.includes("pummok")) out.push(obj);
     for (const v of Object.values(obj)) collectRows(v, out);
   }
 }
 
-/** 경매결과 XML 문자열 → GarakRow[] (순수 함수, 테스트 대상) */
-export function parseGarakXml(xml: string): GarakRow[] {
-  const parsed = parser.parse(xml);
+function rowsToGarak(parsed: unknown): GarakRow[] {
   const raw: Record<string, unknown>[] = [];
   collectRows(parsed, raw);
   const rows: GarakRow[] = [];
@@ -59,20 +80,30 @@ export function parseGarakXml(xml: string): GarakRow[] {
   for (const r of raw) {
     if (seen.has(r)) continue;
     seen.add(r);
-    const price = toNum(r.PPRICE);
-    const pummok = toStr(r.PUMMOK);
+    const price = toNum(get(r, "PPRICE"));
+    const pummok = toStr(get(r, "PUMMOK"));
     if (!price || !pummok) continue;
     rows.push({
       pummok,
-      pumjong: toStr(r.PUMJONG),
-      unit: toStr(r.UUN),
-      grade: toStr(r.DDD),
+      pumjong: toStr(get(r, "PUMJONG")),
+      unit: toStr(get(r, "UUN")),
+      grade: toStr(get(r, "DDD")),
       price,
-      origin: toStr(r.SSANGI),
-      date: toStr(r.ADJ_DT),
+      origin: toStr(get(r, "SSANGI")),
+      date: toStr(get(r, "ADJ_DT")),
     });
   }
   return rows;
+}
+
+/** 경매결과 XML 문자열 → GarakRow[] (순수 함수, 테스트 대상) */
+export function parseGarakXml(xml: string): GarakRow[] {
+  return rowsToGarak(parser.parse(xml));
+}
+
+/** 경매결과 JSON(파싱된 객체) → GarakRow[] (순수 함수, 테스트 대상) */
+export function parseGarakJson(json: unknown): GarakRow[] {
+  return rowsToGarak(json);
 }
 
 /** 품목명별 평균 경락가로 집계 (순수 함수, 테스트 대상) */
@@ -93,16 +124,15 @@ function ymd(dateISO: string): string {
   return dateISO.replace(/-/g, "");
 }
 
-/** 특정 품목의 특정일 평균 경락가를 조회한다. 실패 시 null. */
-export async function fetchGarakAuction(
+async function fetchCorp(
   itemName: string,
   dateISO: string,
-): Promise<number | null> {
+  bubin: string,
+): Promise<GarakRow[]> {
   const id = process.env.GARAK_API_ID;
   const pw = process.env.GARAK_API_PW;
   const dataid = process.env.GARAK_AUCTION_DATAID;
-  if (!id || !pw || !dataid) return null;
-
+  if (!id || !pw || !dataid) return [];
   const params = new URLSearchParams({
     id,
     passwd: pw,
@@ -111,21 +141,37 @@ export async function fetchGarakAuction(
     pageidx: "1",
     "portal.templet": "false",
     s_date: ymd(dateISO),
+    s_bubin: bubin,
     s_pummok: itemName,
+    s_sangi: "",
   });
-
   try {
-    const res = await fetch(`${ENDPOINT}?${params}`, {
+    const res = await fetch(`${JSON_ENDPOINT}?${params}`, {
       next: { revalidate: 600 },
     });
-    if (!res.ok) return null;
-    const rows = parseGarakXml(await res.text());
-    const agg = aggregateByPummok(rows);
-    // 정확 일치 우선, 없으면 부분 일치
-    if (agg.has(itemName)) return agg.get(itemName)!;
-    for (const [k, v] of agg) if (k.includes(itemName)) return v;
-    return null;
+    if (!res.ok) return [];
+    return parseGarakJson(await res.json());
   } catch {
-    return null;
+    return [];
   }
+}
+
+/**
+ * 특정 품목의 특정일 평균 경락가(가락 6개 법인 합산)를 조회한다. 실패/무데이터 시 null.
+ * 인증정보(GARAK_API_ID/PW, GARAK_AUCTION_DATAID)가 없으면 null.
+ */
+export async function fetchGarakAuction(
+  itemName: string,
+  dateISO: string,
+): Promise<number | null> {
+  if (!process.env.GARAK_API_ID || !process.env.GARAK_API_PW) return null;
+  const perCorp = await Promise.all(
+    GARAK_CORP_CODES.map((b) => fetchCorp(itemName, dateISO, b)),
+  );
+  const all = perCorp.flat();
+  if (all.length === 0) return null;
+  const agg = aggregateByPummok(all);
+  if (agg.has(itemName)) return agg.get(itemName)!;
+  for (const [k, v] of agg) if (k.includes(itemName)) return v;
+  return null;
 }
