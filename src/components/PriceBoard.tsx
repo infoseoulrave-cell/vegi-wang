@@ -43,7 +43,7 @@ export function PriceBoard({ items }: { items: PriceItemWithSignal[] }) {
         {visible.map((item) => (
           <article
             key={item.id}
-            className="flex flex-col rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5"
+            className="nums flex flex-col rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 transition hover:shadow-md hover:ring-brand/20"
           >
             <div className="flex items-start justify-between gap-2">
               <div>

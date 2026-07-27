@@ -5,6 +5,10 @@
   --foreground: #14231a;
   --brand: #1f9d55;
   --brand-dark: #147a41;
+  /* 나침반 신호 3색 (브랜드 그린으로 대체 금지) */
+  --signal-cheap: #059669;
+  --signal-fair: #d97706;
+  --signal-expensive: #e11d48;
 }
 
 @theme inline {
@@ -12,13 +16,23 @@
   --color-foreground: var(--foreground);
   --color-brand: var(--brand);
   --color-brand-dark: var(--brand-dark);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-signal-cheap: var(--signal-cheap);
+  --color-signal-fair: var(--signal-fair);
+  --color-signal-expensive: var(--signal-expensive);
+  --font-sans:
+    "Pretendard Variable", Pretendard, var(--font-geist-sans),
+    "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), "Apple SD Gothic Neo", "Malgun Gothic",
-    "Noto Sans KR", sans-serif;
+  font-family: var(--font-sans);
+  word-break: keep-all; /* 한글 단어 단위 줄바꿈 */
+}
+
+/* 가격·수치는 자릿수 정렬을 위해 고정폭 숫자 */
+.nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
 }

@@ -117,8 +117,14 @@ export default async function Home() {
         </div>
       </section>
 
-      <footer className="mt-16 border-t border-black/5 pt-8 text-center text-sm text-foreground/40">
-        베지왕(Vegi-Wang) · 농수산물 유통을 소비자 편으로 · MVP
+      <footer className="mt-16 border-t border-black/5 pt-8 text-center">
+        <p className="text-sm font-semibold text-foreground/60">
+          🥬 베지왕 · 농수산물 유통을 소비자 편으로
+        </p>
+        <p className="mt-1.5 text-xs text-foreground/40">
+          데이터 출처: 가락시장 경락가(서울시농수산식품공사) · 평년가·소매가(KAMIS
+          농수산물유통정보) · MVP
+        </p>
       </footer>
     </main>
   );
@@ -134,7 +140,7 @@ function Stat({
   hint?: string;
 }) {
   return (
-    <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+    <div className="nums rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
       <p className="text-xs text-foreground/50">{label}</p>
       <p className="mt-1 text-lg font-bold">{value}</p>
       {hint && <p className="text-xs text-emerald-600">{hint}</p>}
