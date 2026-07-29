@@ -28,6 +28,7 @@ export interface KamisProbeResult {
   itemCount: number;
   error?: string;
   snippet?: string;
+  sampleFields?: Record<string, unknown> | null;
 }
 
 function toNum(v: unknown): number {
@@ -176,6 +177,15 @@ export async function probeKamis(
     const withToday = rows.filter((r) => r.today > 0).length;
     const withBaseline = rows.filter((r) => r.normalYear > 0).length;
     const names = rows.slice(0, 8).map((r) => r.itemName);
+    const rawItems = extractItems(parsed);
+    const sample = rawItems.find((it) => toStr(it.item_name ?? it.itemname) === "배추") ?? rawItems[0];
+    const dprFields = sample
+      ? Object.fromEntries(
+          Object.entries(sample)
+            .filter(([k]) => /dpr|price|item|rank|unit|day/i.test(k))
+            .map(([k, v]) => [k, v]),
+        )
+      : null;
     return {
       ok: rows.length > 0,
       status: res.status,
@@ -183,6 +193,7 @@ export async function probeKamis(
       itemCount: rows.length,
       error: rows.length ? undefined : "empty_rows",
       snippet: `today>0:${withToday} baseline>0:${withBaseline} names:${names.join(",")}`,
+      sampleFields: dprFields,
     };
   } catch (e) {
     return {
