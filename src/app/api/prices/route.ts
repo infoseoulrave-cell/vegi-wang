@@ -3,6 +3,8 @@ import { isValidDateISO } from "@/server/domain/date";
 import { getRepositories } from "@/server/repos";
 import { getServedPriceFeed } from "@/server/services/price-feed";
 
+/** KAMIS 등 국내 API WAF를 피하기 위해 서울 리전 우선 */
+export const preferredRegion = "icn1";
 export const revalidate = 600;
 
 export async function GET(request: Request) {

@@ -5,8 +5,6 @@ import type { ProduceCategory } from "../types";
  * 응답(JSON) 각 행: item_name, rank, unit, dpr1(당일가), dpr7(평년 가격) 등.
  *   - 도매(02)의 dpr7 → 평년 기준가 (나침반 baseline)
  *   - 소매(01)의 dpr1 → 소매가 (유통 거품 지표)
- *
- * NOTE: 실데이터 필드/래퍼 구조는 발급 키로 응답을 받아 최종 확인 필요.
  */
 
 const ENDPOINT = "https://www.kamis.or.kr/service/price/xml.do";
@@ -21,6 +19,15 @@ export interface KamisRow {
   itemName: string;
   today: number; // dpr1
   normalYear: number; // dpr7 (평년)
+}
+
+export interface KamisProbeResult {
+  ok: boolean;
+  status: number | null;
+  contentType: string | null;
+  itemCount: number;
+  error?: string;
+  snippet?: string;
 }
 
 function toNum(v: unknown): number {
@@ -66,34 +73,119 @@ export function parseKamisRows(json: unknown): KamisRow[] {
   return rows;
 }
 
-async function fetchCategory(
+function hasCredentials(): boolean {
+  return Boolean(
+    process.env.KAMIS_CERT_KEY?.trim() && process.env.KAMIS_CERT_ID?.trim(),
+  );
+}
+
+function buildParams(
   clsCode: "01" | "02",
   categoryCode: string,
   dateISO: string,
-): Promise<KamisRow[] | null> {
-  const certKey = process.env.KAMIS_CERT_KEY;
-  const certId = process.env.KAMIS_CERT_ID;
-  if (!certKey || !certId) return null;
-
-  const params = new URLSearchParams({
+): URLSearchParams {
+  return new URLSearchParams({
     action: "dailyPriceByCategoryList",
     p_product_cls_code: clsCode,
     p_item_category_code: categoryCode,
     p_country_code: "",
     p_regday: dateISO,
     p_convert_kg_yn: "Y",
-    p_cert_key: certKey,
-    p_cert_id: certId,
+    p_cert_key: process.env.KAMIS_CERT_KEY!.trim(),
+    p_cert_id: process.env.KAMIS_CERT_ID!.trim(),
     p_returntype: "json",
   });
+}
+
+const FETCH_HEADERS: HeadersInit = {
+  Accept: "application/json, text/plain, */*",
+  "User-Agent":
+    "Mozilla/5.0 (compatible; VegiWang/1.0; +https://vegi-wang.vercel.app)",
+  Referer: "https://www.kamis.or.kr/",
+};
+
+async function fetchCategory(
+  clsCode: "01" | "02",
+  categoryCode: string,
+  dateISO: string,
+): Promise<KamisRow[] | null> {
+  if (!hasCredentials()) return null;
+
+  const params = buildParams(clsCode, categoryCode, dateISO);
   try {
     const res = await fetch(`${ENDPOINT}?${params}`, {
+      headers: FETCH_HEADERS,
       next: { revalidate: 600 },
     });
     if (!res.ok) return null;
-    return parseKamisRows(await res.json());
+    const text = await res.text();
+    if (text.includes("Web firewall") || text.trimStart().startsWith("<")) {
+      return null;
+    }
+    return parseKamisRows(JSON.parse(text));
   } catch {
     return null;
+  }
+}
+
+/** 운영 진단용 — 시크릿 미노출, HTTP/파싱 상태만 반환 */
+export async function probeKamis(
+  dateISO: string,
+): Promise<KamisProbeResult> {
+  if (!hasCredentials()) {
+    return {
+      ok: false,
+      status: null,
+      contentType: null,
+      itemCount: 0,
+      error: "missing_credentials",
+    };
+  }
+
+  const params = buildParams("02", "200", dateISO);
+  try {
+    const res = await fetch(`${ENDPOINT}?${params}`, {
+      headers: FETCH_HEADERS,
+      cache: "no-store",
+    });
+    const contentType = res.headers.get("content-type");
+    const text = await res.text();
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        contentType,
+        itemCount: 0,
+        error: "http_error",
+        snippet: text.slice(0, 160).replace(/\s+/g, " "),
+      };
+    }
+    if (text.includes("Web firewall") || text.trimStart().startsWith("<")) {
+      return {
+        ok: false,
+        status: res.status,
+        contentType,
+        itemCount: 0,
+        error: "waf_or_html",
+        snippet: text.slice(0, 160).replace(/\s+/g, " "),
+      };
+    }
+    const rows = parseKamisRows(JSON.parse(text));
+    return {
+      ok: rows.length > 0,
+      status: res.status,
+      contentType,
+      itemCount: rows.length,
+      error: rows.length ? undefined : "empty_rows",
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      status: null,
+      contentType: null,
+      itemCount: 0,
+      error: e instanceof Error ? e.message : "unknown",
+    };
   }
 }
 

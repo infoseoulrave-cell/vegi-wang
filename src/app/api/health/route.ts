@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getEnv, hasAtCredentials, hasDatabase, hasGarakCredentials, preferredAuctionSource } from "@/server/config/env";
 import { getRepositories } from "@/server/repos";
 
+export const preferredRegion = "icn1";
 export const dynamic = "force-dynamic";
 
 /** 백엔드 헬스 — 시크릿 값은 노출하지 않음 */
