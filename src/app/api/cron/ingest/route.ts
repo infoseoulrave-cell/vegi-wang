@@ -5,7 +5,7 @@ import { getRepositories } from "@/server/repos";
 import { runMorningIngest } from "@/server/services/ingest";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 function authorized(request: Request): boolean {
   const secret = getEnv().cronSecret;

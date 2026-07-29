@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "db:migrate": "node --env-file=.env.local ./scripts/db-migrate.mjs",
-    "go:live": "node --env-file=.env.local ./scripts/go-live.mjs"
+    "go:live": "node --env-file=.env.local ./scripts/go-live.mjs",
+    "ingest": "tsx --env-file=.env.local ./scripts/run-ingest.ts"
   },
   "dependencies": {
     "fast-xml-parser": "^5.10.1",
@@ -26,6 +27,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
     "tailwindcss": "^4",
+    "tsx": "^4.23.1",
     "typescript": "^5",
     "vitest": "^4.1.10"
   }

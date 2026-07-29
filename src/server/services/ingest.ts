@@ -112,6 +112,7 @@ async function fetchAtRows(
   });
   const res = await fetch(`${AT_ENDPOINT}?${params}`, {
     cache: "no-store",
+    signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) throw new Error(`aT HTTP ${res.status}`);
   return parseAtItems(await res.json());
@@ -127,29 +128,56 @@ async function fetchGarakRowsForItem(
   const ymd = saleDate.replace(/-/g, "");
   const out: Array<GarakRow & { corpCode: string }> = [];
 
-  for (const bubin of GARAK_CORP_CODES) {
-    const params = new URLSearchParams({
-      id,
-      passwd: pw,
-      dataid,
-      pagesize: "1000",
-      pageidx: "1",
-      "portal.templet": "false",
-      s_date: ymd,
-      s_bubin: bubin,
-      s_pummok: query,
-      s_sangi: "",
-    });
-    try {
-      const res = await fetch(`${GARAK_JSON}?${params}`, { cache: "no-store" });
-      if (!res.ok) continue;
-      const rows = parseGarakJson(await res.json());
-      for (const r of rows) out.push({ ...r, corpCode: bubin });
-    } catch {
-      // 법인 단위 실패는 스킵
+  // 법인은 병렬 + 요청 타임아웃 (전체 hang 방지)
+  const perCorp = await Promise.all(
+    GARAK_CORP_CODES.map(async (bubin) => {
+      const params = new URLSearchParams({
+        id,
+        passwd: pw,
+        dataid,
+        pagesize: "1000",
+        pageidx: "1",
+        "portal.templet": "false",
+        s_date: ymd,
+        s_bubin: bubin,
+        s_pummok: query,
+        s_sangi: "",
+      });
+      try {
+        const res = await fetch(`${GARAK_JSON}?${params}`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (!res.ok) return [] as Array<GarakRow & { corpCode: string }>;
+        const rows = parseGarakJson(await res.json());
+        return rows.map((r) => ({ ...r, corpCode: bubin }));
+      } catch {
+        return [] as Array<GarakRow & { corpCode: string }>;
+      }
+    }),
+  );
+  for (const rows of perCorp) out.push(...rows);
+  return out;
+}
+
+/** 동시성 제한 맵 */
+async function mapPool<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let idx = 0;
+  async function worker() {
+    while (idx < items.length) {
+      const i = idx++;
+      results[i] = await fn(items[i]);
     }
   }
-  return out;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+  );
+  return results;
 }
 
 async function collectRaw(
@@ -169,9 +197,12 @@ async function collectRaw(
   if (preferred === "garak" || preferred === "at") {
     if (getEnv().garak.id) {
       const names = SAMPLE_ITEMS.map((i) => i.name);
-      const batches = await Promise.all(
-        names.map((n) => fetchGarakRowsForItem(n, saleDate)),
-      );
+      console.error(`[ingest] garak fetch ${names.length} items (concurrency=3)`);
+      const batches = await mapPool(names, 3, async (n) => {
+        const rows = await fetchGarakRowsForItem(n, saleDate);
+        console.error(`[ingest]   ${n}: ${rows.length}`);
+        return rows;
+      });
       const flat = batches.flat();
       if (flat.length) {
         return {
@@ -205,7 +236,9 @@ export async function runMorningIngest(
   const marketCode = options.marketCode ?? getEnv().defaultMarketCode;
   const windowDays = getEnv().baselineWindowDays;
 
+  console.error(`[ingest] seed catalog…`);
   await seedCatalog(repos);
+  console.error(`[ingest] ensure market ${marketCode}`);
   await repos.catalog.ensureMarket({
     ...GARAK_MARKET,
     code: marketCode,
@@ -214,17 +247,21 @@ export async function runMorningIngest(
   let source: AuctionIngestSource | "none" = options.drySource ?? "none";
   let rows: RawAuctionRecord[] = options.dryRows ?? [];
 
+  console.error(`[ingest] start run log`);
   const runId = await repos.ingestRuns.start({
     saleDate,
     marketCode,
     source: source === "none" ? preferredAuctionSource() : source,
   });
+  console.error(`[ingest] runId=${runId}`);
 
   try {
     if (!options.dryRows) {
+      console.error(`[ingest] collecting raw for ${saleDate}…`);
       const collected = await collectRaw(saleDate, marketCode);
       source = collected.source;
       rows = collected.rows;
+      console.error(`[ingest] collected source=${source} rows=${rows.length}`);
     }
 
     if (!rows.length) {
@@ -247,7 +284,9 @@ export async function runMorningIngest(
       };
     }
 
+    console.error(`[ingest] upserting ${rows.length} raw rows…`);
     const rowsUpserted = await repos.auction.upsertRaw(rows);
+    console.error(`[ingest] aggregate…`);
     const { dailyUpserted, baselinesUpserted } = await aggregateSaleDate(
       repos,
       marketCode,

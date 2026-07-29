@@ -46,25 +46,39 @@ class PgAuctionRepo implements AuctionRepository {
 
   async upsertRaw(records: RawAuctionRecord[]): Promise<number> {
     if (!records.length) return 0;
+    const CHUNK = 200;
     let n = 0;
-    for (const r of records) {
+    for (let i = 0; i < records.length; i += CHUNK) {
+      const slice = records.slice(i, i + CHUNK);
+      const chunk = slice.map((r) => ({
+        natural_key: r.naturalKey,
+        sale_date: r.saleDate,
+        market_code: r.marketCode,
+        corp_code: r.corpCode,
+        corp_name: r.corpName,
+        item_name: r.itemName,
+        item_variety: r.itemVariety,
+        unit: r.unit,
+        grade: r.grade,
+        origin: r.origin,
+        qty: r.qty,
+        price: r.price,
+        source: r.source,
+        payload: r.payload ? JSON.stringify(r.payload) : null,
+      }));
       await this.sql`
-        INSERT INTO raw_auction (
-          natural_key, sale_date, market_code, corp_code, corp_name,
-          item_name, item_variety, unit, grade, origin, qty, price, source, payload
-        ) VALUES (
-          ${r.naturalKey}, ${r.saleDate}::date, ${r.marketCode}, ${r.corpCode},
-          ${r.corpName}, ${r.itemName}, ${r.itemVariety}, ${r.unit}, ${r.grade},
-          ${r.origin}, ${r.qty}, ${r.price}, ${r.source},
-          ${r.payload ? this.sql.json(r.payload as never) : null}
-        )
+        INSERT INTO raw_auction
+          ${this.sql(chunk)}
         ON CONFLICT (natural_key) DO UPDATE SET
           price = EXCLUDED.price,
           qty = EXCLUDED.qty,
           payload = EXCLUDED.payload,
           ingested_at = NOW()
       `;
-      n += 1;
+      n += chunk.length;
+      if (records.length > CHUNK) {
+        console.error(`[ingest] upsert progress ${n}/${records.length}`);
+      }
     }
     return n;
   }
