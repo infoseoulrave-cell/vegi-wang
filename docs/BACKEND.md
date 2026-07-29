@@ -79,7 +79,8 @@ BASELINE_WINDOW_DAYS=30
 
 1. [Supabase](https://supabase.com/dashboard)에서 프로젝트 생성(또는 기존 프로젝트 선택)
 2. **Project Settings → Database → Connection string → URI** 복사  
-   - 권장: **Session mode** (`…pooler.supabase.com:5432`)  
+   - Cloud Agent 등 IPv4-only 환경에서는 직접 DB 호스트(`db.*.supabase.co`)가 IPv6만 제공하는 경우가 많음  
+   - 권장: **Session pooler** (`aws-0-<region>.pooler.supabase.com:5432`, 유저명 `postgres.<project-ref>`)
    - 비밀번호에 특수문자가 있으면 URL 인코딩
 3. Cloud Agent Secrets 또는 `.env.local`에 추가:
    ```bash

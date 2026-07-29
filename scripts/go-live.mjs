@@ -81,6 +81,7 @@ try {
   console.log("→ ingest");
   const ingestRes = await fetch(`http://127.0.0.1:${port}/api/cron/ingest`, {
     headers: { Authorization: `Bearer ${cronSecret}` },
+    signal: AbortSignal.timeout(300_000),
   });
   const body = await ingestRes.json().catch(() => ({}));
   console.log(`✓ ingest HTTP ${ingestRes.status}`, body);
