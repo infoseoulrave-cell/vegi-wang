@@ -1,5 +1,5 @@
-import { getRepositories, setRepositoriesForTest } from "../src/server/repos/index";
 import { createPostgresRepositories } from "../src/server/repos/postgres";
+import { setRepositoriesForTest } from "../src/server/repos/index";
 import { runMorningIngest } from "../src/server/services/ingest";
 import { getEnv } from "../src/server/config/env";
 
