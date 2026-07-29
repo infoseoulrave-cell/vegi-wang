@@ -296,7 +296,7 @@ export interface KamisPrice {
 
 /** 소비자 단위 → 대략 kg (소매 포기/개 환산용 힌트) */
 const CONSUMER_KG_HINT: Record<string, number> = {
-  배추: 3.3, // 10kg망 ÷ 3포기
+  배추: 2.8,
   무: 1.8,
   양파: 0.25,
   대파: 1,

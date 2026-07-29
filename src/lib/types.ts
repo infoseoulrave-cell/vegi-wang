@@ -16,6 +16,10 @@ export interface PriceItem {
   auctionUnit: string;
   /** 거래 단위의 환산 중량(kg) — 원/kg 계산용 */
   weightKg: number;
+  /** 소비자 구매 단위 라벨 (예: 1포기, 1개, 1마리, 1단, 1팩) */
+  consumerUnit: string;
+  /** 소비자 구매 단위 1개의 환산 중량(kg) — 1개 기준가 계산용 */
+  kgPerConsumerUnit: number;
   /** 등급 (예: 특, 상, 중) */
   grade: string;
   /** 대표 산지 */
@@ -48,6 +52,13 @@ export interface PriceItemWithSignal extends PriceItem {
   retailGap: RetailGapLevel;
   /** 소매 대신 경락가 수준으로 살 때 kg당 아끼는 금액 (원) */
   savingPerKg: number;
+
+  /** 소비자 단위(1개 등) 기준 도매(경락가) 환산가 (원) */
+  consumerAuctionPrice: number;
+  /** 소비자 단위(1개 등) 기준 소매 환산가 (원) */
+  consumerRetailPrice: number;
+  /** 소비자 단위 1개당 도매로 살 때 아끼는 금액 (원) */
+  savingPerUnit: number;
 
   /** 두 지표를 결합한 소비자용 추천 문구 */
   recommendation: string;

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useMemo, useState } from "react";
 import { CompassBadge, RetailGapBadge } from "@/components/CompassBadge";
 import { signedPct, won } from "@/lib/format";
@@ -46,23 +47,32 @@ export function PriceBoard({ items }: { items: PriceItemWithSignal[] }) {
             className="nums flex flex-col rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 transition hover:shadow-md hover:ring-brand/20"
           >
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <h3 className="text-lg font-bold">{item.name}</h3>
-                <p className="mt-0.5 text-xs text-foreground/50">
-                  {item.origin} · {item.grade} · {item.auctionUnit}
-                </p>
+              <div className="flex items-center gap-3">
+                <Image
+                  src={`/images/items/${item.id}.png`}
+                  alt={item.name}
+                  width={56}
+                  height={56}
+                  className="h-14 w-14 shrink-0 rounded-xl object-cover ring-1 ring-black/5"
+                />
+                <div>
+                  <h3 className="text-lg font-bold">{item.name}</h3>
+                  <p className="mt-0.5 text-xs text-foreground/50">
+                    {item.origin} · {item.grade}
+                  </p>
+                </div>
               </div>
               <CompassBadge level={item.compass} />
             </div>
 
-            {/* 가락시장 실제 경락가 */}
+            {/* 소비자 단위(1개 등) 기준 도매가 */}
             <div className="mt-4">
               <p className="text-[11px] font-semibold text-brand-dark">
-                가락시장 경락가
+                {item.consumerUnit} 도매가 (가락 경락가 기준)
               </p>
               <div className="flex items-end justify-between">
                 <p className="text-2xl font-extrabold tracking-tight">
-                  {won(item.auctionPrice)}
+                  {won(item.consumerAuctionPrice)}
                 </p>
                 <p
                   className={`text-sm font-semibold ${
@@ -77,18 +87,18 @@ export function PriceBoard({ items }: { items: PriceItemWithSignal[] }) {
                 </p>
               </div>
               <p className="mt-0.5 text-xs text-foreground/50">
-                kg당 {won(item.auctionPerKg)} · 평년比{" "}
+                실제 경매 {item.auctionUnit} {won(item.auctionPrice)} · 평년比{" "}
                 <span className="font-semibold text-foreground/70">
                   {signedPct(item.deviationRate)}
                 </span>
               </p>
             </div>
 
-            {/* 소매가 대비 유통 지표 */}
+            {/* 소매가 대비 유통 지표 (소비자 단위 기준) */}
             <div className="mt-3 rounded-xl bg-background/60 p-3 ring-1 ring-black/5">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-foreground/60">
-                  소매가 {won(item.retailPricePerKg)}/kg
+                  소매 {item.consumerUnit} 약 {won(item.consumerRetailPrice)}
                 </span>
                 <RetailGapBadge level={item.retailGap} />
               </div>
@@ -98,7 +108,7 @@ export function PriceBoard({ items }: { items: PriceItemWithSignal[] }) {
                 </span>
                 <span className="text-foreground/60">
                   {" "}
-                  · 도매로 사면 kg당 {won(item.savingPerKg)} 절약
+                  · {item.consumerUnit}당 {won(item.savingPerUnit)} 절약
                 </span>
               </p>
             </div>
