@@ -3,8 +3,10 @@ import type { ProduceCategory } from "../types";
 /**
  * KAMIS 일별 부류별 도·소매가격 (action=dailyPriceByCategoryList)
  * 응답(JSON) 각 행: item_name, rank, unit, dpr1(당일가), dpr7(평년 가격) 등.
- *   - 도매(02)의 dpr7 → 평년 기준가 (나침반 baseline)
- *   - 소매(01)의 dpr1 → 소매가 (유통 거품 지표)
+ *   - 도매(02)의 dpr7 → 평년 기준가 (나침반 baseline, 거래단위 가격)
+ *   - 소매(01)의 최근 유효 dpr → 소매가 (가능하면 원/kg로 정규화)
+ *
+ * 주의: 당일(dpr1)·전일(dpr2)이 "-"인 날이 있어 dpr1~dpr6 중 가장 최근 유효값을 사용한다.
  */
 
 const ENDPOINT = "https://www.kamis.or.kr/service/price/xml.do";
@@ -17,8 +19,12 @@ export const KAMIS_CATEGORY_CODE: Record<ProduceCategory, string> = {
 
 export interface KamisRow {
   itemName: string;
-  today: number; // dpr1
-  normalYear: number; // dpr7 (평년)
+  rank: string;
+  unit: string;
+  /** dpr1~dpr6 중 가장 최근 유효 일별가 */
+  today: number;
+  /** dpr7 평년가 */
+  normalYear: number;
 }
 
 export interface KamisProbeResult {
@@ -34,6 +40,7 @@ export interface KamisProbeResult {
 function toNum(v: unknown): number {
   if (typeof v === "number") return v;
   if (typeof v === "string") {
+    if (v.trim() === "-" || v.trim() === "") return 0;
     const n = Number(v.replace(/[^0-9.-]/g, ""));
     return Number.isFinite(n) ? n : 0;
   }
@@ -41,6 +48,38 @@ function toNum(v: unknown): number {
 }
 function toStr(v: unknown): string {
   return v == null ? "" : String(v).trim();
+}
+
+/** dpr1(당일) → dpr6(1년전) 순으로 첫 유효 숫자 */
+export function latestDailyPrice(it: Record<string, unknown>): number {
+  for (const key of ["dpr1", "dpr2", "dpr3", "dpr4", "dpr5", "dpr6"] as const) {
+    const n = toNum(it[key]);
+    if (n > 0) return n;
+  }
+  return 0;
+}
+
+/**
+ * KAMIS 단위 문자열을 원/kg로 정규화.
+ * - "1kg", "10kg ..." → 명시 kg로 나눔
+ * - "1포기"/"1개"/"1단" 등 + 힌트 kg → 힌트로 나눔
+ * - 힌트 없으면 원가 그대로(호출측에서 거래단위 비교용으로 쓸 수 있음)
+ */
+export function normalizeKamisPriceToPerKg(
+  price: number,
+  unit: string,
+  kgHint?: number,
+): number {
+  if (!price) return 0;
+  const m = unit.match(/(\d+(?:\.\d+)?)\s*kg/i);
+  if (m) {
+    const kg = Number(m[1]);
+    return kg > 0 ? Math.round(price / kg) : price;
+  }
+  if (kgHint && kgHint > 0 && /(포기|개|단|마리|팩)/.test(unit)) {
+    return Math.round(price / kgHint);
+  }
+  return price;
 }
 
 function extractItems(data: unknown): Record<string, unknown>[] {
@@ -58,6 +97,13 @@ function extractItems(data: unknown): Record<string, unknown>[] {
   return [];
 }
 
+function rankScore(rank: string): number {
+  if (rank.includes("상품")) return 3;
+  if (rank.includes("중품")) return 2;
+  if (rank.includes("하품")) return 1;
+  return 0;
+}
+
 /** KAMIS JSON(파싱된 객체) → KamisRow[] (순수 함수, 테스트 대상) */
 export function parseKamisRows(json: unknown): KamisRow[] {
   const items = extractItems(json);
@@ -67,11 +113,39 @@ export function parseKamisRows(json: unknown): KamisRow[] {
     if (!itemName || itemName === "평균") continue;
     rows.push({
       itemName,
-      today: toNum(it.dpr1),
+      rank: toStr(it.rank),
+      unit: toStr(it.unit),
+      today: latestDailyPrice(it),
       normalYear: toNum(it.dpr7),
     });
   }
   return rows;
+}
+
+/**
+ * 동일 품목명 여러 등급/단위 중 상품 우선으로 하나만 고른다.
+ */
+export function pickPreferredRows(rows: KamisRow[]): KamisRow[] {
+  const best = new Map<string, KamisRow>();
+  for (const row of rows) {
+    const prev = best.get(row.itemName);
+    if (!prev) {
+      best.set(row.itemName, row);
+      continue;
+    }
+    const byRank = rankScore(row.rank) - rankScore(prev.rank);
+    if (byRank > 0) {
+      best.set(row.itemName, row);
+      continue;
+    }
+    if (byRank === 0) {
+      // kg 단위가 있으면 비교·환산에 유리
+      const rowKg = /kg/i.test(row.unit) ? 1 : 0;
+      const prevKg = /kg/i.test(prev.unit) ? 1 : 0;
+      if (rowKg > prevKg) best.set(row.itemName, row);
+    }
+  }
+  return [...best.values()];
 }
 
 function hasCredentials(): boolean {
@@ -123,7 +197,7 @@ async function fetchCategory(
     if (text.includes("Web firewall") || text.trimStart().startsWith("<")) {
       return null;
     }
-    return parseKamisRows(JSON.parse(text));
+    return pickPreferredRows(parseKamisRows(JSON.parse(text)));
   } catch {
     return null;
   }
@@ -173,12 +247,14 @@ export async function probeKamis(
       };
     }
     const parsed = JSON.parse(text);
-    const rows = parseKamisRows(parsed);
+    const rows = pickPreferredRows(parseKamisRows(parsed));
     const withToday = rows.filter((r) => r.today > 0).length;
     const withBaseline = rows.filter((r) => r.normalYear > 0).length;
-    const names = rows.slice(0, 8).map((r) => r.itemName);
+    const names = rows.slice(0, 8).map((r) => `${r.itemName}/${r.unit}`);
     const rawItems = extractItems(parsed);
-    const sample = rawItems.find((it) => toStr(it.item_name ?? it.itemname) === "배추") ?? rawItems[0];
+    const sample =
+      rawItems.find((it) => toStr(it.item_name ?? it.itemname) === "배추") ??
+      rawItems[0];
     const dprFields = sample
       ? Object.fromEntries(
           Object.entries(sample)
@@ -211,9 +287,22 @@ export async function probeKamisRetail(dateISO: string): Promise<KamisProbeResul
 }
 
 export interface KamisPrice {
-  baseline?: number; // 도매 평년가 (dpr7)
-  retailPerKg?: number; // 소매 당일가 (dpr1, kg 환산)
+  /** 도매 평년가 — 거래단위 기준(경락 auctionPrice와 동일 축) */
+  baseline?: number;
+  /** 소매 최근가 (원/kg 정규화 시도) */
+  retailPerKg?: number;
+  retailUnit?: string;
 }
+
+/** 소비자 단위 → 대략 kg (소매 포기/개 환산용 힌트) */
+const CONSUMER_KG_HINT: Record<string, number> = {
+  배추: 3.3, // 10kg망 ÷ 3포기
+  무: 1.8,
+  양파: 0.25,
+  대파: 1,
+  애호박: 0.35,
+  토마토: 0.25,
+};
 
 /**
  * 필요한 부류(category)에 대해 도매/소매를 조회하고 품목명 기준으로 합친다.
@@ -246,8 +335,16 @@ export async function fetchKamisPrices(
     if (!rows) continue;
     for (const row of rows) {
       const cur = map.get(row.itemName) ?? {};
-      if (kind === "wholesale" && row.normalYear) cur.baseline = row.normalYear;
-      if (kind === "retail" && row.today) cur.retailPerKg = row.today;
+      if (kind === "wholesale" && row.normalYear) {
+        // 경락 auctionPrice는 거래단위 금액이므로, 도매 평년도 거래단위 축을 유지
+        cur.baseline = row.normalYear;
+      }
+      if (kind === "retail" && row.today) {
+        const baseName = row.itemName.replace(/\(.*?\)/g, "").trim();
+        const hint = CONSUMER_KG_HINT[baseName] ?? CONSUMER_KG_HINT[row.itemName];
+        cur.retailPerKg = normalizeKamisPriceToPerKg(row.today, row.unit, hint);
+        cur.retailUnit = row.unit;
+      }
       map.set(row.itemName, cur);
     }
   }
