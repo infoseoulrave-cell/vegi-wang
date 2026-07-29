@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useMemo, useState } from "react";
 import { CompassBadge, RetailGapBadge } from "@/components/CompassBadge";
 import { signedPct, won } from "@/lib/format";
@@ -46,11 +47,20 @@ export function PriceBoard({ items }: { items: PriceItemWithSignal[] }) {
             className="nums flex flex-col rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 transition hover:shadow-md hover:ring-brand/20"
           >
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <h3 className="text-lg font-bold">{item.name}</h3>
-                <p className="mt-0.5 text-xs text-foreground/50">
-                  {item.origin} · {item.grade}
-                </p>
+              <div className="flex items-center gap-3">
+                <Image
+                  src={`/images/items/${item.id}.png`}
+                  alt={item.name}
+                  width={56}
+                  height={56}
+                  className="h-14 w-14 shrink-0 rounded-xl object-cover ring-1 ring-black/5"
+                />
+                <div>
+                  <h3 className="text-lg font-bold">{item.name}</h3>
+                  <p className="mt-0.5 text-xs text-foreground/50">
+                    {item.origin} · {item.grade}
+                  </p>
+                </div>
               </div>
               <CompassBadge level={item.compass} />
             </div>
