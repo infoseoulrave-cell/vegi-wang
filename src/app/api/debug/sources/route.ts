@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchGarakAuction } from "@/lib/sources/garak";
-import { probeKamis } from "@/lib/sources/kamis";
+import { probeKamis, probeKamisRetail } from "@/lib/sources/kamis";
 import { getEnv, preferredAuctionSource } from "@/server/config/env";
 import { todayKST } from "@/server/domain/date";
 
@@ -15,8 +15,9 @@ export async function GET() {
   const date = todayKST();
   const env = getEnv();
 
-  const [kamis, cabbage] = await Promise.all([
+  const [kamisWholesale, kamisRetail, cabbage] = await Promise.all([
     probeKamis(date),
+    probeKamisRetail(date),
     fetchGarakAuction("배추", date),
   ]);
 
@@ -34,6 +35,7 @@ export async function GET() {
       sampleItem: "배추",
       avgPrice: cabbage,
     },
-    kamis,
+    kamisWholesale,
+    kamisRetail,
   });
 }

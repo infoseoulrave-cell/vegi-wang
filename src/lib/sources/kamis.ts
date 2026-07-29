@@ -131,6 +131,7 @@ async function fetchCategory(
 /** 운영 진단용 — 시크릿 미노출, HTTP/파싱 상태만 반환 */
 export async function probeKamis(
   dateISO: string,
+  clsCode: "01" | "02" = "02",
 ): Promise<KamisProbeResult> {
   if (!hasCredentials()) {
     return {
@@ -142,7 +143,7 @@ export async function probeKamis(
     };
   }
 
-  const params = buildParams("02", "200", dateISO);
+  const params = buildParams(clsCode, "200", dateISO);
   try {
     const res = await fetch(`${ENDPOINT}?${params}`, {
       headers: FETCH_HEADERS,
@@ -170,13 +171,18 @@ export async function probeKamis(
         snippet: text.slice(0, 160).replace(/\s+/g, " "),
       };
     }
-    const rows = parseKamisRows(JSON.parse(text));
+    const parsed = JSON.parse(text);
+    const rows = parseKamisRows(parsed);
+    const withToday = rows.filter((r) => r.today > 0).length;
+    const withBaseline = rows.filter((r) => r.normalYear > 0).length;
+    const names = rows.slice(0, 8).map((r) => r.itemName);
     return {
       ok: rows.length > 0,
       status: res.status,
       contentType,
       itemCount: rows.length,
       error: rows.length ? undefined : "empty_rows",
+      snippet: `today>0:${withToday} baseline>0:${withBaseline} names:${names.join(",")}`,
     };
   } catch (e) {
     return {
@@ -187,6 +193,10 @@ export async function probeKamis(
       error: e instanceof Error ? e.message : "unknown",
     };
   }
+}
+
+export async function probeKamisRetail(dateISO: string): Promise<KamisProbeResult> {
+  return probeKamis(dateISO, "01");
 }
 
 export interface KamisPrice {
