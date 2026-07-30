@@ -1,21 +1,20 @@
 import Image from "next/image";
+import Link from "next/link";
 import { PriceBoard } from "@/components/PriceBoard";
 import { SavingsBasket } from "@/components/SavingsBasket";
 import { TodayPicks } from "@/components/TodayPicks";
 import { WaitlistForm } from "@/components/WaitlistForm";
-import { buildTodayPicks } from "@/lib/consumer-picks";
+import { CATEGORY_META, categoryHref } from "@/lib/categories";
+import { buildTodayPickGroups } from "@/lib/consumer-picks";
 import { won } from "@/lib/format";
+import type { ProduceCategory } from "@/lib/types";
 import { getRepositories } from "@/server/repos";
 import { getServedPriceFeed } from "@/server/services/price-feed";
 
 export const revalidate = 600;
 export const preferredRegion = "icn1";
 
-const CATEGORY_TILES = [
-  { key: "채소", img: "/images/cat_vegetable.png", desc: "배추·시금치·마늘·당근" },
-  { key: "과일", img: "/images/cat_fruit.png", desc: "사과·포도·감귤·수박" },
-  { key: "수산", img: "/images/cat_seafood.png", desc: "고등어·갈치·명태·멸치" },
-];
+const CATEGORY_TILES: ProduceCategory[] = ["채소", "과일", "수산"];
 
 export default async function Home() {
   const feed = await getServedPriceFeed(getRepositories());
@@ -26,7 +25,7 @@ export default async function Home() {
   const bestSaving = [...feed.items].sort(
     (a, b) => b.savingPerUnit - a.savingPerUnit,
   )[0];
-  const picks = buildTodayPicks(feed.items);
+  const pickGroups = buildTodayPickGroups(feed.items);
   const isSample =
     feed.auctionSource === "sample" || feed.retailSource === "sample";
 
@@ -107,37 +106,40 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* 카테고리 사진 타일 */}
+      {/* 카테고리 사진 타일 → 고유 카테고리 페이지 */}
       <section className="mx-auto mt-10 w-full max-w-6xl px-5">
         <div className="grid grid-cols-3 gap-3 sm:gap-4">
-          {CATEGORY_TILES.map((c) => (
-            <a
-              key={c.key}
-              href="#board"
-              className="group relative aspect-square overflow-hidden rounded-2xl ring-1 ring-black/5"
-            >
-              <Image
-                src={c.img}
-                alt={c.key}
-                fill
-                sizes="(max-width: 640px) 33vw, 360px"
-                className="object-cover transition duration-300 group-hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-              <div className="absolute inset-x-0 bottom-0 p-3 sm:p-4">
-                <p className="text-lg font-bold text-white sm:text-xl">
-                  {c.key}
-                </p>
-                <p className="hidden text-xs text-white/80 sm:block">
-                  {c.desc}
-                </p>
-              </div>
-            </a>
-          ))}
+          {CATEGORY_TILES.map((key) => {
+            const c = CATEGORY_META[key];
+            return (
+              <Link
+                key={key}
+                href={categoryHref(key)}
+                className="group relative aspect-square overflow-hidden rounded-2xl ring-1 ring-black/5"
+              >
+                <Image
+                  src={c.img}
+                  alt={c.title}
+                  fill
+                  sizes="(max-width: 640px) 33vw, 360px"
+                  className="object-cover transition duration-300 group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                <div className="absolute inset-x-0 bottom-0 p-3 sm:p-4">
+                  <p className="text-lg font-bold text-white sm:text-xl">
+                    {c.title}
+                  </p>
+                  <p className="hidden text-xs text-white/80 sm:block">
+                    {c.desc}
+                  </p>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       </section>
 
-      <TodayPicks picks={picks} />
+      <TodayPicks groups={pickGroups} />
 
       <SavingsBasket items={feed.items} />
 
@@ -164,8 +166,8 @@ export default async function Home() {
       <section className="mx-auto mt-20 grid w-full max-w-6xl gap-4 px-5 sm:grid-cols-3">
         <Feature
           icon="🛒"
-          title="오늘 장보기 추천 3"
-          desc="지금 담을 것·관망할 것·소매 거품 큰 것을 한눈에. 시세 해석을 대신해 드립니다."
+          title="구매 추천 · 관망 분리"
+          desc="담기 좋은 3종과 거품·고가권 관망 3종을 따로 보여 장보기 결정을 돕습니다."
         />
         <Feature
           icon="🧺"

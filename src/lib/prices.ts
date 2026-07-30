@@ -75,16 +75,26 @@ function prevFromSeries(
   return older[0]?.price ?? fallback;
 }
 
+function latestSeriesPrice(series: PricePoint[] | undefined): number | null {
+  if (!series?.length) return null;
+  const sorted = [...series]
+    .filter((p) => p.price > 0)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  return sorted[0]?.price ?? null;
+}
+
 export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
   const todayISO = dateISO ?? kstDate(new Date());
 
-  const queryNames = SAMPLE_ITEMS.map(itemQueryName);
-  const categories = SAMPLE_ITEMS.map((i) => i.category);
+  // 가락은 청과(채소·과일)만 조회 — 수산·가공은 KAMIS 도매 시리즈로 보완
+  const garakNames = SAMPLE_ITEMS.filter(
+    (i) => i.category === "채소" || i.category === "과일",
+  ).map(itemQueryName);
 
   // 오늘 경락 + KAMIS(시계열·소매) — 전일 가락 전량 재조회는 생략(시리즈로 대체)
   const [auctionToday, kamis] = await Promise.all([
-    resolveAuctionToday(queryNames, todayISO),
-    fetchKamisPrices(categories, todayISO),
+    resolveAuctionToday(garakNames, todayISO),
+    fetchKamisPrices(["채소", "과일", "수산"], todayISO),
   ]);
 
   let auctionLive = false;
@@ -97,10 +107,11 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
     const k: KamisPrice | undefined =
       pickByName(kamis, base.name) ?? pickByName(kamis, q);
 
-    if (aToday != null) auctionLive = true;
+    const kamisToday = latestSeriesPrice(k?.series);
+    if (aToday != null || kamisToday != null) auctionLive = true;
     if (k?.retailPerKg) retailLive = true;
 
-    const auctionPrice = aToday ?? base.auctionPrice;
+    const auctionPrice = aToday ?? kamisToday ?? base.auctionPrice;
     const auctionPrevPrice = prevFromSeries(
       k?.series,
       todayISO,

@@ -42,8 +42,7 @@ export async function getServedPriceFeed(
   const prevMap = new Map(prevDaily.map((d) => [d.itemName, d]));
   const baselineByItemId = new Map(baselines.map((b) => [b.itemId, b]));
 
-  const categories = SAMPLE_ITEMS.map((i) => i.category);
-  const kamis = await fetchKamisPrices(categories, saleDate);
+  const kamis = await fetchKamisPrices(["채소", "과일", "수산"], saleDate);
 
   let retailLive = false;
   const fromDate = addDaysISO(saleDate, -(windowDays - 1));

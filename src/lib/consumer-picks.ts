@@ -1,86 +1,173 @@
 import type { PriceItemWithSignal } from "./types";
 
-export type PickKind = "buy" | "wait" | "bubble";
+export type PickKind = "buy" | "watch";
 
 export interface TodayPick {
   kind: PickKind;
+  rank: number;
   title: string;
   subtitle: string;
   item: PriceItemWithSignal;
 }
 
-/**
- * 홈용 "오늘 장보기 추천 3"
- * - buy: 최근 저가권 (분위 낮은 순)
- * - wait: 최근 고가권 (분위 높은 순)
- * - bubble: 유통 거품 큰 순 (저가권 우선 tie-break)
- */
-export function buildTodayPicks(items: PriceItemWithSignal[]): TodayPick[] {
-  if (!items.length) return [];
+export interface TodayPickGroups {
+  buys: TodayPick[];
+  watches: TodayPick[];
+}
 
-  const byLow = [...items].sort(
-    (a, b) => a.trendPercentile - b.trendPercentile,
-  );
-  const byHigh = [...items].sort(
-    (a, b) => b.trendPercentile - a.trendPercentile,
-  );
-  const byBubble = [...items].sort((a, b) => {
-    if (b.retailMultiple !== a.retailMultiple) {
-      return b.retailMultiple - a.retailMultiple;
-    }
-    return a.trendPercentile - b.trendPercentile;
-  });
+/** 구매 추천 점수 — 낮을수록 담기 좋음 (저가권 + 유통마진 양호) */
+export function buyScore(item: PriceItemWithSignal): number {
+  const bubblePenalty =
+    item.retailGap === "bubble"
+      ? 40
+      : item.retailGap === "normal"
+        ? 12
+        : 0;
+  const multiplePenalty = Math.max(0, (item.retailMultiple - 1.5) * 10);
+  return item.trendPercentile + bubblePenalty + multiplePenalty;
+}
 
-  const used = new Set<string>();
-  const picks: TodayPick[] = [];
+/** 관망 점수 — 높을수록 거품·고가 주의 */
+export function watchScore(item: PriceItemWithSignal): number {
+  const bubbleBoost =
+    item.retailGap === "bubble" ? 50 : item.retailGap === "normal" ? 15 : 0;
+  const multipleBoost = Math.max(0, (item.retailMultiple - 1.8) * 25);
+  return multipleBoost + bubbleBoost + item.trendPercentile * 0.35;
+}
 
-  const take = (
-    kind: PickKind,
-    title: string,
-    subtitle: string,
-    pool: PriceItemWithSignal[],
-    pred?: (i: PriceItemWithSignal) => boolean,
-  ) => {
-    const hit = pool.find((i) => !used.has(i.id) && (!pred || pred(i)));
-    if (!hit) return;
-    used.add(hit.id);
-    picks.push({ kind, title, subtitle, item: hit });
+function buyTitle(item: PriceItemWithSignal, rank: number): {
+  title: string;
+  subtitle: string;
+} {
+  if (item.trendPosition === "low" && item.retailGap !== "bubble") {
+    return {
+      title: rank === 1 ? "지금 가장 담기 좋은" : "담기 좋은 타이밍",
+      subtitle: "최근 저가권 · 유통마진도 양호",
+    };
+  }
+  if (item.trendPosition === "low") {
+    return {
+      title: "저가권 진입",
+      subtitle: "최근 동향 대비 낮은 가격대",
+    };
+  }
+  return {
+    title: "상대적으로 유리",
+    subtitle: "오늘 기준 구매 우선순위",
   };
+}
 
-  take(
-    "buy",
-    "지금 담기 좋은",
-    "최근 동향 기준 저가권",
-    byLow,
-    (i) => i.trendPosition === "low" || i.trendPercentile <= 40,
-  );
-  if (!picks.some((p) => p.kind === "buy")) {
-    take("buy", "지금 담기 좋은", "오늘 분위가 가장 낮은 품목", byLow);
+function watchTitle(item: PriceItemWithSignal): {
+  title: string;
+  subtitle: string;
+} {
+  if (item.retailGap === "bubble") {
+    return {
+      title: "소매 거품 주의",
+      subtitle: `소매÷도매 ${item.retailMultiple}배 — 관망·직거래 유리`,
+    };
+  }
+  if (item.trendPosition === "high") {
+    return {
+      title: "고가권 · 관망",
+      subtitle: "최근 동향 대비 높은 가격대",
+    };
+  }
+  return {
+    title: "오늘은 관망",
+    subtitle: "유통마진·시세 부담이 큰 편",
+  };
+}
+
+/**
+ * 추천 3: 가격 동향·유통마진 기준으로 담기 좋은 품목
+ * 관망 3: 소매 거품·고가권 등 당장 사기 부담인 품목
+ * 두 목록은 서로 다른 품목만 담는다.
+ */
+export function buildTodayPickGroups(
+  items: PriceItemWithSignal[],
+  limit = 3,
+): TodayPickGroups {
+  if (!items.length) return { buys: [], watches: [] };
+
+  const byBuy = [...items].sort((a, b) => buyScore(a) - buyScore(b));
+  const byWatch = [...items].sort((a, b) => watchScore(b) - watchScore(a));
+
+  const buys: TodayPick[] = [];
+  const used = new Set<string>();
+
+  for (const item of byBuy) {
+    if (buys.length >= limit) break;
+    // 추천에는 심한 거품 품목을 넣지 않음
+    if (item.retailGap === "bubble" && item.trendPosition !== "low") continue;
+    used.add(item.id);
+    const { title, subtitle } = buyTitle(item, buys.length + 1);
+    buys.push({
+      kind: "buy",
+      rank: buys.length + 1,
+      title,
+      subtitle,
+      item,
+    });
+  }
+  // 부족하면 점수순으로 채움 (그래도 거품만 남은 경우)
+  for (const item of byBuy) {
+    if (buys.length >= limit) break;
+    if (used.has(item.id)) continue;
+    used.add(item.id);
+    const { title, subtitle } = buyTitle(item, buys.length + 1);
+    buys.push({
+      kind: "buy",
+      rank: buys.length + 1,
+      title,
+      subtitle,
+      item,
+    });
   }
 
-  take(
-    "wait",
-    "오늘은 관망",
-    "최근 동향 기준 고가권",
-    byHigh,
-    (i) => i.trendPosition === "high" || i.trendPercentile >= 60,
-  );
-  if (!picks.some((p) => p.kind === "wait")) {
-    take("wait", "오늘은 관망", "오늘 분위가 가장 높은 품목", byHigh);
+  const watches: TodayPick[] = [];
+  for (const item of byWatch) {
+    if (watches.length >= limit) break;
+    if (used.has(item.id)) continue;
+    // 관망은 거품·고가·배수 높은 쪽만
+    if (
+      item.retailGap !== "bubble" &&
+      item.trendPosition !== "high" &&
+      item.retailMultiple < 2
+    ) {
+      continue;
+    }
+    used.add(item.id);
+    const { title, subtitle } = watchTitle(item);
+    watches.push({
+      kind: "watch",
+      rank: watches.length + 1,
+      title,
+      subtitle,
+      item,
+    });
+  }
+  for (const item of byWatch) {
+    if (watches.length >= limit) break;
+    if (used.has(item.id)) continue;
+    used.add(item.id);
+    const { title, subtitle } = watchTitle(item);
+    watches.push({
+      kind: "watch",
+      rank: watches.length + 1,
+      title,
+      subtitle,
+      item,
+    });
   }
 
-  take(
-    "bubble",
-    "소매 거품 주의",
-    "소매÷도매 배수가 큼 — 직거래·도매가 유리",
-    byBubble,
-    (i) => i.retailGap === "bubble" || i.retailMultiple >= 2,
-  );
-  if (!picks.some((p) => p.kind === "bubble")) {
-    take("bubble", "소매 거품 주의", "유통 마진이 큰 편", byBubble);
-  }
+  return { buys, watches };
+}
 
-  return picks;
+/** @deprecated 하위호환 — 그룹 API 사용 */
+export function buildTodayPicks(items: PriceItemWithSignal[]): TodayPick[] {
+  const { buys, watches } = buildTodayPickGroups(items, 3);
+  return [...buys, ...watches];
 }
 
 export function totalBasketSaving(

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { CompassBadge, RetailGapBadge } from "@/components/CompassBadge";
 import { PriceSparkline } from "@/components/PriceSparkline";
+import { categoryHref } from "@/lib/categories";
 import { COMPASS_META } from "@/lib/compass";
 import { signedPct, won } from "@/lib/format";
 import type { PriceItemWithSignal, ProduceCategory } from "@/lib/types";
@@ -37,32 +38,55 @@ function ItemThumb({ id, name }: { id: string; name: string }) {
   );
 }
 
-export function PriceBoard({ items }: { items: PriceItemWithSignal[] }) {
-  const [tab, setTab] = useState<ProduceCategory | "전체">("전체");
-
-  const visible = useMemo(
-    () => (tab === "전체" ? items : items.filter((i) => i.category === tab)),
-    [items, tab],
+export function PriceBoard({
+  items,
+  lockedCategory,
+}: {
+  items: PriceItemWithSignal[];
+  /** 지정 시 해당 카테고리만 표시하고 탭 숨김 (카테고리 전용 페이지) */
+  lockedCategory?: ProduceCategory;
+}) {
+  const [tab, setTab] = useState<ProduceCategory | "전체">(
+    lockedCategory ?? "전체",
   );
+
+  const visible = useMemo(() => {
+    if (lockedCategory) {
+      return items.filter((i) => i.category === lockedCategory);
+    }
+    return tab === "전체" ? items : items.filter((i) => i.category === tab);
+  }, [items, tab, lockedCategory]);
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap gap-2">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+      {!lockedCategory && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {TABS.map((t) => {
+            const className = `rounded-full px-4 py-1.5 text-sm font-medium transition ${
               tab === t.key
                 ? "bg-brand text-white shadow-sm"
                 : "bg-white text-foreground/70 ring-1 ring-black/5 hover:bg-brand/5"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+            }`;
+            if (t.key === "전체") {
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setTab(t.key)}
+                  className={className}
+                >
+                  {t.label}
+                </button>
+              );
+            }
+            return (
+              <Link key={t.key} href={categoryHref(t.key)} className={className}>
+                {t.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((item) => {

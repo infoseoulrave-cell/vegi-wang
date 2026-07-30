@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { CompassBadge, RetailGapBadge } from "@/components/CompassBadge";
 import { ItemHeroImage } from "@/components/ItemHeroImage";
 import { PriceHistoryChart } from "@/components/PriceHistoryChart";
+import { categoryHref } from "@/lib/categories";
 import { COMPASS_META } from "@/lib/compass";
 import { signedPct, won } from "@/lib/format";
 import { getCatalogItem, getItemDetail } from "@/lib/item-detail";
@@ -61,10 +62,10 @@ export default async function ItemDetailPage({
     <main className="mx-auto w-full max-w-6xl px-5 pb-24">
       <header className="flex items-center justify-between py-5">
         <Link
-          href="/#board"
+          href={categoryHref(item.category)}
           className="text-sm font-semibold text-foreground/60 transition hover:text-brand-dark"
         >
-          ← 시세 보드
+          ← {item.category} 시세
         </Link>
         <Link href="/" className="text-lg font-extrabold tracking-tight">
           베지왕
