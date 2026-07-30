@@ -111,13 +111,13 @@ export function TodayPicks({ groups }: { groups: TodayPickGroups }) {
       <PickSection
         id="buy-picks"
         title="오늘 구매 추천 3"
-        description="최근 저가권·유통마진을 기준으로 담기 좋은 품목만 골랐습니다"
+        description="배추·사과·고등어처럼 자주 사는 생식품 중, 오늘 담기 좋은 것만"
         picks={groups.buys}
       />
       <PickSection
         id="watch-picks"
         title="오늘 관망 3"
-        description="소매 거품이 크거나 고가권이라 급하지 않다면 미루는 편이 나은 품목"
+        description="자주 사는 품목 중 거품·고가라 급하지 않다면 미루는 편이 나은 것"
         picks={groups.watches}
       />
     </div>

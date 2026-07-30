@@ -1,4 +1,5 @@
 import { BUBBLE_MIN } from "./compass";
+import { everydayItems } from "./catalog-focus";
 import type { PriceItemWithSignal } from "./types";
 
 export type PickKind = "buy" | "watch";
@@ -58,12 +59,13 @@ export function savingsBasketScore(item: PriceItemWithSignal): number {
   return saveRate * 0.5 + trendBonus * 0.35 + absNorm * 0.15;
 }
 
-/** 오늘 절약 바구니 — 거품 제외, 시세·절약률 기준 상위 N */
+/** 오늘 절약 바구니 — 일상 생식품 · 거품 제외 · 절약률·저가권 기준 */
 export function buildSavingsBasket(
   items: PriceItemWithSignal[],
   limit = 8,
 ): PriceItemWithSignal[] {
-  return [...items]
+  const pool = everydayItems(items);
+  return [...pool]
     .filter((i) => Number.isFinite(savingsBasketScore(i)))
     .sort((a, b) => savingsBasketScore(b) - savingsBasketScore(a))
     .slice(0, limit);
@@ -114,18 +116,18 @@ function watchTitle(item: PriceItemWithSignal): {
 }
 
 /**
- * 추천 3: 가격 동향·유통마진 기준으로 담기 좋은 품목
- * 관망 3: 소매 거품·고가권 등 당장 사기 부담인 품목
+ * 추천 3 / 관망 3 — 사람들이 자주 사는 생식품만 후보.
  * 두 목록은 서로 다른 품목만 담는다.
  */
 export function buildTodayPickGroups(
   items: PriceItemWithSignal[],
   limit = 3,
 ): TodayPickGroups {
-  if (!items.length) return { buys: [], watches: [] };
+  const pool = everydayItems(items);
+  if (!pool.length) return { buys: [], watches: [] };
 
-  const byBuy = [...items].sort((a, b) => buyScore(a) - buyScore(b));
-  const byWatch = [...items].sort((a, b) => watchScore(b) - watchScore(a));
+  const byBuy = [...pool].sort((a, b) => buyScore(a) - buyScore(b));
+  const byWatch = [...pool].sort((a, b) => watchScore(b) - watchScore(a));
 
   const buys: TodayPick[] = [];
   const used = new Set<string>();

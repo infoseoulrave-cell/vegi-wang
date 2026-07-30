@@ -8,6 +8,7 @@ import {
   totalBasketSaving,
   watchScore,
 } from "./consumer-picks";
+import { isProcessedItem } from "./catalog-focus";
 import type { PriceItem } from "./types";
 
 function item(
@@ -36,11 +37,11 @@ function item(
 }
 
 describe("buildTodayPickGroups", () => {
-  it("추천 3과 관망 3을 서로 다른 품목으로 고른다", () => {
+  it("일상 생식품만으로 추천 3·관망 3을 고른다", () => {
     const items = [
       item({
-        id: "low1",
-        name: "저가1",
+        id: "cabbage",
+        name: "배추",
         auctionPrice: 6000,
         retailPricePerKg: 900,
         history: [
@@ -50,8 +51,8 @@ describe("buildTodayPickGroups", () => {
         ],
       }),
       item({
-        id: "low2",
-        name: "저가2",
+        id: "radish",
+        name: "무",
         auctionPrice: 6500,
         retailPricePerKg: 950,
         history: [
@@ -61,8 +62,8 @@ describe("buildTodayPickGroups", () => {
         ],
       }),
       item({
-        id: "low3",
-        name: "저가3",
+        id: "onion",
+        name: "양파",
         auctionPrice: 7000,
         retailPricePerKg: 1000,
         history: [
@@ -72,8 +73,9 @@ describe("buildTodayPickGroups", () => {
         ],
       }),
       item({
-        id: "bubble1",
-        name: "거품1",
+        id: "apple",
+        name: "사과",
+        category: "과일",
         auctionPrice: 10000,
         retailPricePerKg: 4500,
         history: [
@@ -83,8 +85,9 @@ describe("buildTodayPickGroups", () => {
         ],
       }),
       item({
-        id: "bubble2",
-        name: "거품2",
+        id: "banana",
+        name: "바나나",
+        category: "과일",
         auctionPrice: 10000,
         retailPricePerKg: 4000,
         history: [
@@ -94,8 +97,9 @@ describe("buildTodayPickGroups", () => {
         ],
       }),
       item({
-        id: "bubble3",
-        name: "거품3",
+        id: "mackerel",
+        name: "고등어",
+        category: "수산",
         auctionPrice: 10000,
         retailPricePerKg: 3800,
         history: [
@@ -104,25 +108,31 @@ describe("buildTodayPickGroups", () => {
           { date: "2026-07-28", price: 13000 },
         ],
       }),
+      // 가공품 — 추천 후보에서 제외되어야 함
+      item({
+        id: "chili-powder",
+        name: "고춧가루",
+        auctionPrice: 5000,
+        retailPricePerKg: 800,
+        history: [
+          { date: "2026-07-01", price: 12000 },
+          { date: "2026-07-28", price: 9000 },
+        ],
+      }),
     ];
 
     const { buys, watches } = buildTodayPickGroups(items, 3);
     expect(buys).toHaveLength(3);
     expect(watches).toHaveLength(3);
-    const buyIds = buys.map((p) => p.item.id);
-    const watchIds = watches.map((p) => p.item.id);
-    expect(new Set([...buyIds, ...watchIds]).size).toBe(6);
-    expect(buys.every((p) => p.kind === "buy")).toBe(true);
-    expect(watches.every((p) => p.kind === "watch")).toBe(true);
-    // 추천은 저가 쪽, 관망은 거품 쪽
-    expect(buyIds.every((id) => id.startsWith("low"))).toBe(true);
-    expect(watchIds.every((id) => id.startsWith("bubble"))).toBe(true);
+    const allIds = [...buys, ...watches].map((p) => p.item.id);
+    expect(allIds).not.toContain("chili-powder");
+    expect(new Set(allIds).size).toBe(6);
   });
 
   it("buyScore가 낮을수록 추천 우선", () => {
     const cheap = item({
-      id: "c",
-      name: "c",
+      id: "cabbage",
+      name: "배추",
       auctionPrice: 6000,
       retailPricePerKg: 800,
       history: [
@@ -131,8 +141,9 @@ describe("buildTodayPickGroups", () => {
       ],
     });
     const expensive = item({
-      id: "e",
-      name: "e",
+      id: "apple",
+      name: "사과",
+      category: "과일",
       auctionPrice: 15000,
       retailPricePerKg: 4000,
       history: [
@@ -146,12 +157,13 @@ describe("buildTodayPickGroups", () => {
 });
 
 describe("buildSavingsBasket", () => {
-  it("소매 거품 큰 품목을 1위에서 제외하고 절약률·저가권을 우선한다", () => {
+  it("일상 품목만·거품 제외·절약률 우선", () => {
     const bubble = item({
       id: "grape",
-      name: "거품포도",
+      name: "포도",
+      category: "과일",
       auctionPrice: 10000,
-      retailPricePerKg: 5000, // 큰 배수
+      retailPricePerKg: 5000,
       history: [
         { date: "2026-07-01", price: 10000 },
         { date: "2026-07-15", price: 10000 },
@@ -159,8 +171,8 @@ describe("buildSavingsBasket", () => {
       ],
     });
     const fair = item({
-      id: "fair",
-      name: "합리적",
+      id: "cucumber",
+      name: "오이",
       auctionPrice: 7000,
       retailPricePerKg: 1100,
       history: [
@@ -170,8 +182,8 @@ describe("buildSavingsBasket", () => {
       ],
     });
     const mid = item({
-      id: "mid",
-      name: "중위",
+      id: "tomato",
+      name: "토마토",
       auctionPrice: 9000,
       retailPricePerKg: 1400,
       history: [
@@ -180,13 +192,25 @@ describe("buildSavingsBasket", () => {
         { date: "2026-07-28", price: 9500 },
       ],
     });
+    const processed = item({
+      id: "sea-salt",
+      name: "천일염",
+      category: "수산",
+      auctionPrice: 5000,
+      retailPricePerKg: 900,
+      history: [
+        { date: "2026-07-01", price: 12000 },
+        { date: "2026-07-28", price: 9000 },
+      ],
+    });
 
+    expect(isProcessedItem("sea-salt")).toBe(true);
     expect(bubble.retailGap).toBe("bubble");
-    expect(fair.savingPerUnit).toBeGreaterThan(0);
 
-    const basket = buildSavingsBasket([bubble, fair, mid], 8);
+    const basket = buildSavingsBasket([bubble, fair, mid, processed], 8);
     expect(basket.map((i) => i.id)).not.toContain("grape");
-    expect(basket[0]?.id).toBe("fair");
+    expect(basket.map((i) => i.id)).not.toContain("sea-salt");
+    expect(basket[0]?.id).toBe("cucumber");
     expect(savingsBasketScore(bubble)).toBe(Number.NEGATIVE_INFINITY);
     expect(savingsBasketScore(fair)).toBeGreaterThan(savingsBasketScore(mid));
   });
@@ -195,12 +219,12 @@ describe("buildSavingsBasket", () => {
 describe("totalBasketSaving", () => {
   it("수량×절약액을 합산한다", () => {
     const a = item({
-      id: "a",
-      name: "A",
+      id: "cabbage",
+      name: "배추",
       auctionPrice: 10000,
       retailPricePerKg: 2500,
     });
-    const r = totalBasketSaving([a], { a: 2 });
+    const r = totalBasketSaving([a], { cabbage: 2 });
     expect(r.count).toBe(2);
     expect(r.saving).toBe(a.savingPerUnit * 2);
   });

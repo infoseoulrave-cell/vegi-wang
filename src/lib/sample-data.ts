@@ -1,13 +1,11 @@
 import type { PriceItem } from "./types";
 
 /**
- * 베지왕 품목 카탈로그 — KAMIS에서 실제 가격이 조회되는 종목 전량.
+ * 베지왕 품목 카탈로그 — KAMIS 조회 가능 생식품 중심 (가공·건조·조미 제외).
  * 폴백 수치 포함. 라이브 시 가락·KAMIS가 덮어쓴다.
  */
 export const SAMPLE_ITEMS: PriceItem[] = [
   // ── 채소 ──────────────────────────────────────────────
-  { id: "dried-chili", name: "건고추", category: "채소", auctionUnit: "30kg", weightKg: 30, consumerUnit: "600g", kgPerConsumerUnit: 0.6, grade: "상", origin: "국내산", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
-  { id: "chili-powder", name: "고춧가루", category: "채소", auctionUnit: "1kg", weightKg: 1, consumerUnit: "1kg", kgPerConsumerUnit: 1.0, grade: "상", origin: "국내산", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
   { id: "garlic", name: "깐마늘(국산)", queryName: "깐마늘", category: "채소", auctionUnit: "20kg", weightKg: 20, consumerUnit: "1접", kgPerConsumerUnit: 1.5, grade: "상", origin: "경남 남해", auctionPrice: 85000, auctionPrevPrice: 82000, auctionBaseline: 90000, retailPricePerKg: 14000 },
   { id: "perilla-leaf", name: "깻잎", category: "채소", auctionUnit: "2kg", weightKg: 2, consumerUnit: "50g", kgPerConsumerUnit: 0.05, grade: "상", origin: "국내산", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
   { id: "carrot", name: "당근", category: "채소", auctionUnit: "20kg", weightKg: 20, consumerUnit: "1개", kgPerConsumerUnit: 0.2, grade: "상", origin: "제주", auctionPrice: 28000, auctionPrevPrice: 27000, auctionBaseline: 30000, retailPricePerKg: 3500 },
@@ -54,29 +52,19 @@ export const SAMPLE_ITEMS: PriceItem[] = [
 
   // ── 수산 ──────────────────────────────────────────────
   { id: "hairtail", name: "갈치", category: "수산", auctionUnit: "1kg", weightKg: 1, consumerUnit: "1마리", kgPerConsumerUnit: 0.5, grade: "상", origin: "제주 위판", auctionPrice: 78000, auctionPrevPrice: 75000, auctionBaseline: 80000, retailPricePerKg: 16000 },
-  { id: "kelp", name: "건다시마", category: "수산", auctionUnit: "1kg", weightKg: 1, consumerUnit: "100g", kgPerConsumerUnit: 0.1, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
   { id: "mackerel", name: "고등어", category: "수산", auctionUnit: "10kg", weightKg: 10, consumerUnit: "1마리", kgPerConsumerUnit: 0.4, grade: "상", origin: "부산 위판", auctionPrice: 34000, auctionPrevPrice: 33000, auctionBaseline: 38000, retailPricePerKg: 8900 },
-  { id: "mackerel-fillet", name: "고등어필렛", category: "수산", auctionUnit: "1kg", weightKg: 1, consumerUnit: "1kg", kgPerConsumerUnit: 1.0, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
-  { id: "laver", name: "김", category: "수산", auctionUnit: "1속", weightKg: 1, consumerUnit: "10장", kgPerConsumerUnit: 0.05, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
   { id: "cockle", name: "꼬막", category: "수산", auctionUnit: "1kg", weightKg: 1, consumerUnit: "1kg", kgPerConsumerUnit: 1.0, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
   { id: "saury", name: "꽁치", category: "수산", auctionUnit: "5마리", weightKg: 0.3, consumerUnit: "1마리", kgPerConsumerUnit: 0.4, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
   { id: "blue-crab", name: "꽃게", category: "수산", auctionUnit: "1kg", weightKg: 1, consumerUnit: "1kg", kgPerConsumerUnit: 1.0, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
   { id: "octopus", name: "낙지", category: "수산", auctionUnit: "100g", weightKg: 1, consumerUnit: "100g", kgPerConsumerUnit: 0.1, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
-  { id: "anchovy", name: "마른멸치", category: "수산", auctionUnit: "1.5kg", weightKg: 1.5, consumerUnit: "100g", kgPerConsumerUnit: 0.1, grade: "상", origin: "기장 위판", auctionPrice: 55000, auctionPrevPrice: 52000, auctionBaseline: 58000, retailPricePerKg: 12000 },
-  { id: "seaweed", name: "마른미역", category: "수산", auctionUnit: "1kg", weightKg: 1, consumerUnit: "100g", kgPerConsumerUnit: 0.1, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
-  { id: "dried-squid", name: "마른오징어", category: "수산", auctionUnit: "20마리", weightKg: 1, consumerUnit: "1마리", kgPerConsumerUnit: 0.27, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
-  { id: "anchovy-sauce", name: "멸치액젓", category: "수산", auctionUnit: "1kg", weightKg: 1, consumerUnit: "1kg", kgPerConsumerUnit: 1.0, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
   { id: "pollock", name: "명태", category: "수산", auctionUnit: "20kg", weightKg: 20, consumerUnit: "1마리", kgPerConsumerUnit: 0.6, grade: "상", origin: "속초 위판", auctionPrice: 42000, auctionPrevPrice: 40000, auctionBaseline: 45000, retailPricePerKg: 9000 },
   { id: "squid", name: "물오징어", category: "수산", auctionUnit: "1kg", weightKg: 1, consumerUnit: "1마리", kgPerConsumerUnit: 0.27, grade: "상", origin: "동해 위판", auctionPrice: 62000, auctionPrevPrice: 58000, auctionBaseline: 51000, retailPricePerKg: 14000 },
   { id: "clam", name: "바지락", category: "수산", auctionUnit: "1kg", weightKg: 1, consumerUnit: "1kg", kgPerConsumerUnit: 1.0, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
-  { id: "dried-pollock", name: "북어", category: "수산", auctionUnit: "10마리", weightKg: 0.5, consumerUnit: "1마리", kgPerConsumerUnit: 0.4, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
   { id: "spanish-mackerel", name: "삼치", category: "수산", auctionUnit: "1kg", weightKg: 1, consumerUnit: "1마리", kgPerConsumerUnit: 0.4, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
   { id: "shrimp", name: "새우", category: "수산", auctionUnit: "2kg", weightKg: 2, consumerUnit: "100g", kgPerConsumerUnit: 0.1, grade: "상", origin: "충남 태안", auctionPrice: 28000, auctionPrevPrice: 27500, auctionBaseline: 29000, retailPricePerKg: 39000 },
-  { id: "shrimp-sauce", name: "새우젓", category: "수산", auctionUnit: "1kg", weightKg: 1, consumerUnit: "1kg", kgPerConsumerUnit: 1.0, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
   { id: "imported-croaker", name: "수입조기", category: "수산", auctionUnit: "1마리", weightKg: 0.3, consumerUnit: "1마리", kgPerConsumerUnit: 0.4, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
   { id: "abalone", name: "전복", category: "수산", auctionUnit: "1kg", weightKg: 1, consumerUnit: "1마리", kgPerConsumerUnit: 0.08, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
   { id: "croaker", name: "조기", category: "수산", auctionUnit: "1마리", weightKg: 0.3, consumerUnit: "1마리", kgPerConsumerUnit: 0.4, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
-  { id: "sea-salt", name: "천일염", category: "수산", auctionUnit: "5kg", weightKg: 5, consumerUnit: "1kg", kgPerConsumerUnit: 1.0, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
   { id: "mussel", name: "홍합", category: "수산", auctionUnit: "1kg", weightKg: 1, consumerUnit: "1kg", kgPerConsumerUnit: 1.0, grade: "상", origin: "국내 위판", auctionPrice: 20000, auctionPrevPrice: 19000, auctionBaseline: 21000, retailPricePerKg: 5000 },
 
 ];

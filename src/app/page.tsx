@@ -31,11 +31,22 @@ export default async function Home() {
   return (
     <main className="w-full">
       {/* 헤더 */}
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5">
-        <div className="flex items-center gap-2">
+      <header className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-5 py-5">
+        <Link href="/" className="flex items-center gap-2">
           <span className="text-2xl">🥬</span>
           <span className="text-xl font-extrabold tracking-tight">베지왕</span>
-        </div>
+        </Link>
+        <nav className="hidden items-center gap-1 sm:flex">
+          {CATEGORY_TILES.map((key) => (
+            <Link
+              key={key}
+              href={categoryHref(key)}
+              className="rounded-full px-3 py-1.5 text-sm font-semibold text-foreground/70 transition hover:bg-brand/10 hover:text-brand-dark"
+            >
+              {CATEGORY_META[key].title}
+            </Link>
+          ))}
+        </nav>
         <a
           href="#waitlist"
           className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark"

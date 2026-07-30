@@ -15,19 +15,19 @@ export const CATEGORY_META: Record<
   채소: {
     slug: "vegetable",
     title: "채소",
-    desc: "배추·시금치·마늘·당근 등 KAMIS 채소 부류 시세",
+    desc: "배추·양파·대파·오이 등 장보기 채소 시세",
     img: "/images/cat_vegetable.png",
   },
   과일: {
     slug: "fruit",
     title: "과일",
-    desc: "사과·포도·감귤·바나나 등 KAMIS 과일 부류 시세",
+    desc: "사과·바나나·포도·감귤 등 장보기 과일 시세",
     img: "/images/cat_fruit.png",
   },
   수산: {
     slug: "seafood",
     title: "수산",
-    desc: "고등어·갈치·명태·새우 등 KAMIS 수산 부류 시세",
+    desc: "고등어·오징어·새우·갈치 등 신선 수산 시세",
     img: "/images/cat_seafood.png",
   },
 };

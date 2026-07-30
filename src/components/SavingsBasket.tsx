@@ -23,11 +23,11 @@ export function SavingsBasket({ items }: { items: PriceItemWithSignal[] }) {
       <div className="mb-5">
         <h2 className="text-2xl font-bold">오늘의 절약 바구니</h2>
         <p className="mt-1 max-w-2xl text-sm text-foreground/50">
-          베지왕은 물건을 팔지 않습니다. 최근 저·중위가이면서 유통 거품이 과하지
-          않은 품목 중, 소매 대비 이득이 있는 것만 담았습니다.
+          베지왕은 물건을 팔지 않습니다. 자주 사는 생식품 중에서, 최근 시세와
+          유통마진이 괜찮은 절약 후보만 담았습니다.
           <span className="font-semibold text-foreground/70">
             {" "}
-            소매 거품이 큰 종목은 ‘관망’으로 분리
+            고춧가루·젓갈 등 가공식품과 소매 거품 종목은 제외
           </span>
           합니다.
         </p>
