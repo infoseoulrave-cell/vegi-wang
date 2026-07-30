@@ -36,7 +36,7 @@ export async function POST(request: Request) {
   const result = await registerWaitlist(
     repos,
     email,
-    (interest ?? "").slice(0, 40) || "전체",
+    (interest ?? "").slice(0, 200) || "전체",
   );
   return NextResponse.json(result, { status: 201 });
 }

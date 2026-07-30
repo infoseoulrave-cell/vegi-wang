@@ -1,6 +1,9 @@
 import Image from "next/image";
 import { PriceBoard } from "@/components/PriceBoard";
+import { SavingsBasket } from "@/components/SavingsBasket";
+import { TodayPicks } from "@/components/TodayPicks";
 import { WaitlistForm } from "@/components/WaitlistForm";
+import { buildTodayPicks } from "@/lib/consumer-picks";
 import { won } from "@/lib/format";
 import { getRepositories } from "@/server/repos";
 import { getServedPriceFeed } from "@/server/services/price-feed";
@@ -23,6 +26,7 @@ export default async function Home() {
   const bestSaving = [...feed.items].sort(
     (a, b) => b.savingPerUnit - a.savingPerUnit,
   )[0];
+  const picks = buildTodayPicks(feed.items);
   const isSample =
     feed.auctionSource === "sample" || feed.retailSource === "sample";
 
@@ -38,7 +42,7 @@ export default async function Home() {
           href="#waitlist"
           className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark"
         >
-          아침 시세 알림 받기
+          저가권 알림 받기
         </a>
       </header>
 
@@ -70,16 +74,16 @@ export default async function Home() {
             </p>
             <div className="flex flex-wrap gap-3">
               <a
-                href="#board"
+                href="#today-picks"
                 className="rounded-full bg-brand px-6 py-3 font-semibold text-white shadow-lg transition hover:bg-brand-dark"
               >
-                오늘 시세 보기
+                오늘 추천 3 보기
               </a>
               <a
-                href="#waitlist"
+                href="#basket"
                 className="rounded-full bg-white/90 px-6 py-3 font-semibold text-foreground shadow-lg transition hover:bg-white"
               >
-                아침 알림 받기
+                절약 시뮬 해보기
               </a>
             </div>
             <div className="nums flex flex-wrap gap-2 pt-1">
@@ -133,6 +137,10 @@ export default async function Home() {
         </div>
       </section>
 
+      <TodayPicks picks={picks} />
+
+      <SavingsBasket items={feed.items} />
+
       {/* 경매가 보드 */}
       <section
         id="board"
@@ -155,19 +163,19 @@ export default async function Home() {
       {/* 왜 베지왕 */}
       <section className="mx-auto mt-20 grid w-full max-w-6xl gap-4 px-5 sm:grid-cols-3">
         <Feature
-          icon="📈"
-          title="가격 그래프 · 동향 포지션"
-          desc="평년/작년 한 줄 비교 대신, 최근 시세 곡선에서 지금이 저가·중위·고가권인지 보여줍니다."
+          icon="🛒"
+          title="오늘 장보기 추천 3"
+          desc="지금 담을 것·관망할 것·소매 거품 큰 것을 한눈에. 시세 해석을 대신해 드립니다."
         />
         <Feature
-          icon="⚖️"
-          title="유통 거품 지표"
-          desc="소매가가 경락가의 몇 배인지 공개. 1개(1포기·1마리)당 얼마 아끼는지까지 계산해 드립니다."
+          icon="💸"
+          title="장바구니 절약 시뮬"
+          desc="살 품목을 담으면 소매 대비 도매 환산 절약액을 바로 합산합니다."
         />
         <Feature
-          icon="🧺"
-          title="더 많은 품목"
-          desc="채소·과일·수산 카탈로그를 넓혀 아침 경매가를 소비자 단위로 번역합니다. 이력 DB가 쌓일수록 더 정확해집니다."
+          icon="🔔"
+          title="관심 품목 저가 알림"
+          desc="배추·사과처럼 고른 품목이 최근 저가권에 들어오면 아침 메일로 알려드립니다."
         />
       </section>
 
@@ -179,14 +187,13 @@ export default async function Home() {
         <div className="rounded-3xl bg-white p-8 shadow-sm ring-1 ring-black/5 sm:p-10">
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="text-2xl font-bold sm:text-3xl">
-              매일 아침, 시세 나침반을 메일로 받아보세요
+              관심 품목, 저가권 들어오면 알려드릴게요
             </h2>
             <p className="mt-2 text-foreground/60">
-              관심 품목이 &lsquo;사기 좋은 날&rsquo;이 되면 가장 먼저
-              알려드립니다.
+              평년 비교가 아니라, 최근 동향에서 싸질 때 먼저 받아보세요.
             </p>
           </div>
-          <div className="mx-auto mt-6 max-w-xl">
+          <div className="mx-auto mt-6 max-w-2xl">
             <WaitlistForm />
           </div>
         </div>
@@ -197,8 +204,8 @@ export default async function Home() {
           🥬 베지왕 · 농수산물 유통을 소비자 편으로
         </p>
         <p className="mt-1.5 text-xs text-foreground/40">
-          데이터 출처: 가락시장 경락가(서울시농수산식품공사) · 평년가·소매가(KAMIS
-          농수산물유통정보) · MVP
+          데이터 출처: 가락시장 경락가(서울시농수산식품공사) · 소매·동향(KAMIS
+          농수산물유통정보)
         </p>
       </footer>
     </main>
