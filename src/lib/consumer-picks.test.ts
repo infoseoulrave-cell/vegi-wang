@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { withSignal } from "./compass";
 import {
   buildTodayPickGroups,
+  buildSavingsBasket,
   buyScore,
+  savingsBasketScore,
   totalBasketSaving,
   watchScore,
 } from "./consumer-picks";
@@ -140,6 +142,53 @@ describe("buildTodayPickGroups", () => {
     });
     expect(buyScore(cheap)).toBeLessThan(buyScore(expensive));
     expect(watchScore(expensive)).toBeGreaterThan(watchScore(cheap));
+  });
+});
+
+describe("buildSavingsBasket", () => {
+  it("소매 거품 큰 품목을 1위에서 제외하고 절약률·저가권을 우선한다", () => {
+    const bubble = item({
+      id: "grape",
+      name: "거품포도",
+      auctionPrice: 10000,
+      retailPricePerKg: 5000, // 큰 배수
+      history: [
+        { date: "2026-07-01", price: 10000 },
+        { date: "2026-07-15", price: 10000 },
+        { date: "2026-07-28", price: 10000 },
+      ],
+    });
+    const fair = item({
+      id: "fair",
+      name: "합리적",
+      auctionPrice: 7000,
+      retailPricePerKg: 1100,
+      history: [
+        { date: "2026-07-01", price: 12000 },
+        { date: "2026-07-15", price: 11000 },
+        { date: "2026-07-28", price: 10000 },
+      ],
+    });
+    const mid = item({
+      id: "mid",
+      name: "중위",
+      auctionPrice: 9000,
+      retailPricePerKg: 1400,
+      history: [
+        { date: "2026-07-01", price: 10000 },
+        { date: "2026-07-15", price: 10000 },
+        { date: "2026-07-28", price: 9500 },
+      ],
+    });
+
+    expect(bubble.retailGap).toBe("bubble");
+    expect(fair.savingPerUnit).toBeGreaterThan(0);
+
+    const basket = buildSavingsBasket([bubble, fair, mid], 8);
+    expect(basket.map((i) => i.id)).not.toContain("grape");
+    expect(basket[0]?.id).toBe("fair");
+    expect(savingsBasketScore(bubble)).toBe(Number.NEGATIVE_INFINITY);
+    expect(savingsBasketScore(fair)).toBeGreaterThan(savingsBasketScore(mid));
   });
 });
 

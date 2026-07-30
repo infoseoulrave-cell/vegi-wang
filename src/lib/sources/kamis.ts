@@ -108,7 +108,7 @@ export function extractKamisSeries(
 /**
  * KAMIS 단위 문자열을 원/kg로 정규화.
  * - "1kg", "10kg ..." → 명시 kg로 나눔
- * - "1포기"/"1개"/"1단" 등 + 힌트 kg → 힌트로 나눔
+ * - "10개"/"1포기" 등 + 힌트 kg → (개수×힌트 kg)로 나눔
  * - 힌트 없으면 원가 그대로(호출측에서 거래단위 비교용으로 쓸 수 있음)
  */
 export function normalizeKamisPriceToPerKg(
@@ -122,8 +122,11 @@ export function normalizeKamisPriceToPerKg(
     const kg = Number(m[1]);
     return kg > 0 ? Math.round(price / kg) : price;
   }
-  if (kgHint && kgHint > 0 && /(포기|개|단|마리|팩)/.test(unit)) {
-    return Math.round(price / kgHint);
+  if (kgHint && kgHint > 0 && /(포기|개|단|마리|팩|송이|손)/.test(unit)) {
+    const countMatch = unit.match(/(\d+)\s*(포기|개|단|마리|팩|송이|손)/);
+    const count = countMatch ? Number(countMatch[1]) : 1;
+    const totalKg = kgHint * (count > 0 ? count : 1);
+    return totalKg > 0 ? Math.round(price / totalKg) : price;
   }
   return price;
 }
@@ -353,8 +356,29 @@ const CONSUMER_KG_HINT: Record<string, number> = {
   무: 1.8,
   양파: 0.25,
   대파: 1,
+  파: 1,
   애호박: 0.35,
-  토마토: 0.25,
+  호박: 0.3,
+  토마토: 0.18,
+  수박: 6,
+  멜론: 1.5,
+  참외: 0.4,
+  양배추: 1.5,
+  알배기배추: 1.5,
+  사과: 0.25,
+  배: 0.55,
+  감귤: 0.1,
+  포도: 0.7,
+  복숭아: 0.3,
+  바나나: 0.12,
+  오렌지: 0.2,
+  레몬: 0.12,
+  망고: 0.35,
+  파인애플: 1.5,
+  참다래: 0.1,
+  오이: 0.18,
+  마늘: 0.03,
+  깐마늘: 0.03,
 };
 
 /**

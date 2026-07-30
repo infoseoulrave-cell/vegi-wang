@@ -84,6 +84,8 @@ describe("extractKamisSeries / helpers", () => {
     expect(latestDailyPrice({ dpr1: "-", dpr2: "1,200" })).toBe(1200);
     expect(normalizeKamisPriceToPerKg(10000, "10kg 상자")).toBe(1000);
     expect(normalizeKamisPriceToPerKg(3300, "1포기", 3.3)).toBe(1000);
+    // 10개 × 0.25kg = 2.5kg
+    expect(normalizeKamisPriceToPerKg(25000, "10개", 0.25)).toBe(10000);
   });
 });
 

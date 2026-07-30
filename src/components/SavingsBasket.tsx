@@ -1,22 +1,13 @@
 import Link from "next/link";
 import { CompassBadge, RetailGapBadge } from "@/components/CompassBadge";
+import { buildSavingsBasket } from "@/lib/consumer-picks";
 import { won } from "@/lib/format";
 import type { PriceItemWithSignal } from "@/lib/types";
 
-function buildSavingsBasket(items: PriceItemWithSignal[]) {
-  return [...items]
-    .filter((i) => i.savingPerUnit > 0)
-    .sort((a, b) => {
-      if (b.savingPerUnit !== a.savingPerUnit) {
-        return b.savingPerUnit - a.savingPerUnit;
-      }
-      return a.trendPercentile - b.trendPercentile;
-    })
-    .slice(0, 8);
-}
-
 /**
- * 절약 바구니 — 판매가 아니라 "오늘 사면 소매 대비 이득인 품목" 안내.
+ * 절약 바구니 — 판매가 아님.
+ * 소매 거품이 큰 종목이 아니라, 오늘 시세·유통마진이 괜찮은데
+ * 소매 대비 실질 이득이 있는 품목을 보여준다.
  */
 export function SavingsBasket({ items }: { items: PriceItemWithSignal[] }) {
   const basket = buildSavingsBasket(items);
@@ -32,12 +23,13 @@ export function SavingsBasket({ items }: { items: PriceItemWithSignal[] }) {
       <div className="mb-5">
         <h2 className="text-2xl font-bold">오늘의 절약 바구니</h2>
         <p className="mt-1 max-w-2xl text-sm text-foreground/50">
-          베지왕은 물건을 팔지 않습니다. 대신 가락 도매가와 소매가를 비교해,
+          베지왕은 물건을 팔지 않습니다. 최근 저·중위가이면서 유통 거품이 과하지
+          않은 품목 중, 소매 대비 이득이 있는 것만 담았습니다.
           <span className="font-semibold text-foreground/70">
             {" "}
-            오늘 사면 ‘아꼈다’고 말할 만한 식품
+            소매 거품이 큰 종목은 ‘관망’으로 분리
           </span>
-          을 골라 보여드립니다.
+          합니다.
         </p>
       </div>
 
@@ -60,6 +52,14 @@ export function SavingsBasket({ items }: { items: PriceItemWithSignal[] }) {
                 <p className="mt-0.5 text-xs text-foreground/50">
                   {item.consumerUnit} 도매 {won(item.consumerAuctionPrice)} ·
                   소매 약 {won(item.consumerRetailPrice)}
+                  {" · "}
+                  절약률{" "}
+                  {Math.round(
+                    (item.savingPerUnit /
+                      Math.max(item.consumerRetailPrice, 1)) *
+                      100,
+                  )}
+                  %
                 </p>
               </div>
               <div className="text-right">
@@ -80,8 +80,9 @@ export function SavingsBasket({ items }: { items: PriceItemWithSignal[] }) {
         <aside className="rounded-2xl bg-gradient-to-br from-brand to-brand-dark p-5 text-white shadow-sm">
           <p className="text-sm font-semibold text-white/80">절약 바구니란?</p>
           <p className="mt-3 text-sm leading-relaxed text-white/90">
-            소매가보다 도매(가락 경락) 환산가가 낮아, 오늘 장보면 단위당 이득이
-            큰 품목들입니다. 구매처를 고를 때 참고하세요.
+            ‘소매−도매’ 원액이 가장 큰 목록이 아닙니다. 오늘 시세가 무난하고
+            유통마진도 과도하지 않은데, 소매보다 도매 환산가가 낮아 장보면
+            이득인 식품만 고릅니다.
           </p>
           <p className="nums mt-6 text-xs font-semibold text-white/70">
             상위 {basket.length}개 · 각 1단위씩이면
@@ -91,8 +92,8 @@ export function SavingsBasket({ items }: { items: PriceItemWithSignal[] }) {
           </p>
           <p className="mt-1 text-sm text-white/75">만큼의 가격 차이</p>
           <p className="mt-5 text-xs leading-relaxed text-white/65">
-            * 판매·배송이 아닌 시세 안내입니다. 실제 매장가·수수료와 다를 수
-            있어요.
+            * 판매·배송이 아닌 시세 안내입니다. 거품이 큰 품목은 위 ‘관망 3’을
+            보세요.
           </p>
           <a
             href="#waitlist"

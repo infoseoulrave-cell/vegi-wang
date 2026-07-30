@@ -5,7 +5,7 @@ import { SavingsBasket } from "@/components/SavingsBasket";
 import { TodayPicks } from "@/components/TodayPicks";
 import { WaitlistForm } from "@/components/WaitlistForm";
 import { CATEGORY_META, categoryHref } from "@/lib/categories";
-import { buildTodayPickGroups } from "@/lib/consumer-picks";
+import { buildTodayPickGroups, buildSavingsBasket } from "@/lib/consumer-picks";
 import { won } from "@/lib/format";
 import type { ProduceCategory } from "@/lib/types";
 import { getRepositories } from "@/server/repos";
@@ -22,10 +22,9 @@ export default async function Home() {
   const best = [...feed.items].sort(
     (a, b) => a.trendPercentile - b.trendPercentile,
   )[0];
-  const bestSaving = [...feed.items].sort(
-    (a, b) => b.savingPerUnit - a.savingPerUnit,
-  )[0];
   const pickGroups = buildTodayPickGroups(feed.items);
+  const savingsBasket = buildSavingsBasket(feed.items);
+  const bestSaving = savingsBasket[0];
   const isSample =
     feed.auctionSource === "sample" || feed.retailSource === "sample";
 
@@ -172,7 +171,7 @@ export default async function Home() {
         <Feature
           icon="🧺"
           title="오늘의 절약 바구니"
-          desc="팔지 않습니다. 소매 대비 오늘 사면 이득인 식품만 골라, 장볼 때 참고하게 해드립니다."
+          desc="거품이 큰 종목이 아니라, 오늘 시세·유통마진이 괜찮은 절약 후보만 담아 장볼 때 참고하게 합니다."
         />
         <Feature
           icon="🔔"

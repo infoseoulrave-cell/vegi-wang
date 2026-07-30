@@ -1,3 +1,4 @@
+import { BUBBLE_MIN } from "./compass";
 import type { PriceItemWithSignal } from "./types";
 
 export type PickKind = "buy" | "watch";
@@ -33,6 +34,39 @@ export function watchScore(item: PriceItemWithSignal): number {
     item.retailGap === "bubble" ? 50 : item.retailGap === "normal" ? 15 : 0;
   const multipleBoost = Math.max(0, (item.retailMultiple - 1.8) * 25);
   return multipleBoost + bubbleBoost + item.trendPercentile * 0.35;
+}
+
+/**
+ * 절약 바구니 점수 — 높을수록 ‘오늘 사면 아낀다’.
+ *
+ * 잘못된 기존 로직: savingPerUnit 절대값만 정렬 → 소매 거품이 클수록 1위.
+ * 올바른 역할: 최근 시세가 부담 없고(저·중위), 유통마진도 과도하지 않은데
+ * 소매 대비 실질 절약률이 있는 품목.
+ */
+export function savingsBasketScore(item: PriceItemWithSignal): number {
+  if (item.savingPerUnit <= 0) return Number.NEGATIVE_INFINITY;
+  // 거품·고가권은 관망 섹션 몫 — 절약 바구니에서 제외
+  if (item.retailGap === "bubble" || item.retailMultiple >= BUBBLE_MIN) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  if (item.trendPosition === "high") return Number.NEGATIVE_INFINITY;
+
+  const saveRate = item.savingPerUnit / Math.max(item.consumerRetailPrice, 1);
+  const trendBonus = (100 - item.trendPercentile) / 100;
+  // 절약률 중심 + 저가권 가산 (절대 원액은 보조)
+  const absNorm = Math.min(item.savingPerUnit / 8000, 1);
+  return saveRate * 0.5 + trendBonus * 0.35 + absNorm * 0.15;
+}
+
+/** 오늘 절약 바구니 — 거품 제외, 시세·절약률 기준 상위 N */
+export function buildSavingsBasket(
+  items: PriceItemWithSignal[],
+  limit = 8,
+): PriceItemWithSignal[] {
+  return [...items]
+    .filter((i) => Number.isFinite(savingsBasketScore(i)))
+    .sort((a, b) => savingsBasketScore(b) - savingsBasketScore(a))
+    .slice(0, limit);
 }
 
 function buyTitle(item: PriceItemWithSignal, rank: number): {
@@ -98,7 +132,6 @@ export function buildTodayPickGroups(
 
   for (const item of byBuy) {
     if (buys.length >= limit) break;
-    // 추천에는 심한 거품 품목을 넣지 않음
     if (item.retailGap === "bubble" && item.trendPosition !== "low") continue;
     used.add(item.id);
     const { title, subtitle } = buyTitle(item, buys.length + 1);
@@ -110,7 +143,6 @@ export function buildTodayPickGroups(
       item,
     });
   }
-  // 부족하면 점수순으로 채움 (그래도 거품만 남은 경우)
   for (const item of byBuy) {
     if (buys.length >= limit) break;
     if (used.has(item.id)) continue;
@@ -129,7 +161,6 @@ export function buildTodayPickGroups(
   for (const item of byWatch) {
     if (watches.length >= limit) break;
     if (used.has(item.id)) continue;
-    // 관망은 거품·고가·배수 높은 쪽만
     if (
       item.retailGap !== "bubble" &&
       item.trendPosition !== "high" &&
