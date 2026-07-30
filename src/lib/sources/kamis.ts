@@ -361,6 +361,68 @@ const CONSUMER_KG_HINT: Record<string, number> = {
  * 필요한 부류(category)에 대해 도매/소매를 조회하고 품목명 기준으로 합친다.
  * 키가 없거나 전부 실패하면 null.
  */
+/** 카탈로그 구축용 — 부류별 실제 조회 품목(상품 우선) + 도·소매 단위 */
+export async function listKamisCatalogItems(
+  categories: ProduceCategory[],
+  dateISO: string,
+): Promise<
+  | {
+      category: ProduceCategory;
+      name: string;
+      wholesaleUnit: string;
+      retailUnit: string;
+      hasWholesale: boolean;
+      hasRetail: boolean;
+    }[]
+  | null
+> {
+  const unique = [...new Set(categories)];
+  const out: {
+    category: ProduceCategory;
+    name: string;
+    wholesaleUnit: string;
+    retailUnit: string;
+    hasWholesale: boolean;
+    hasRetail: boolean;
+  }[] = [];
+
+  for (const cat of unique) {
+    const code = KAMIS_CATEGORY_CODE[cat];
+    const [wholesale, retail] = await Promise.all([
+      fetchCategory("02", code, dateISO),
+      fetchCategory("01", code, dateISO),
+    ]);
+    if (wholesale === null && retail === null) continue;
+
+    const names = new Set<string>();
+    const wMap = new Map<string, KamisRow>();
+    const rMap = new Map<string, KamisRow>();
+    for (const r of wholesale ?? []) {
+      names.add(r.itemName);
+      wMap.set(r.itemName, r);
+    }
+    for (const r of retail ?? []) {
+      names.add(r.itemName);
+      rMap.set(r.itemName, r);
+    }
+    for (const name of names) {
+      const w = wMap.get(name);
+      const r = rMap.get(name);
+      if (!(w?.today || w?.normalYear || w?.series?.length || r?.today)) continue;
+      out.push({
+        category: cat,
+        name,
+        wholesaleUnit: w?.unit ?? "",
+        retailUnit: r?.unit ?? "",
+        hasWholesale: Boolean(w?.today || w?.series?.length || w?.normalYear),
+        hasRetail: Boolean(r?.today),
+      });
+    }
+  }
+
+  return out.length ? out : null;
+}
+
 export async function fetchKamisPrices(
   categories: ProduceCategory[],
   dateISO: string,
