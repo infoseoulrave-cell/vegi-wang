@@ -7,6 +7,8 @@ import { categoryHref } from "@/lib/categories";
 import { COMPASS_META } from "@/lib/compass";
 import { signedPct, won } from "@/lib/format";
 import { getCatalogItem, getItemDetail } from "@/lib/item-detail";
+import { CARRY_FORWARD_DAYS } from "@/lib/prices";
+import type { CatalogItem } from "@/lib/types";
 
 export const preferredRegion = "icn1";
 export const dynamic = "force-dynamic";
@@ -43,15 +45,55 @@ function Stat({
   );
 }
 
+/**
+ * 시세는 없지만 품목은 존재하는 상태.
+ * 값을 지어내지 않으면서 페이지(및 색인)를 유지한다.
+ */
+function NoPriceYet({ item }: { item: CatalogItem }) {
+  return (
+    <main className="mx-auto w-full max-w-3xl px-5 py-16">
+      <Link
+        href={categoryHref(item.category)}
+        className="text-sm font-semibold text-brand-dark"
+      >
+        ← {item.category}
+      </Link>
+      <h1 className="mt-4 text-3xl font-bold">{item.name}</h1>
+      <p className="mt-1 text-sm text-foreground/50">
+        {item.consumerUnit} 기준 · 경매 거래단위 {item.auctionUnit}
+      </p>
+
+      <div className="mt-8 rounded-2xl bg-white p-6 ring-1 ring-black/5">
+        <p className="font-semibold">아직 오늘 시세를 확인하지 못했습니다</p>
+        <p className="mt-2 text-sm leading-relaxed text-foreground/60">
+          가락시장은 일요일·공휴일에 휴장합니다. 최근 {CARRY_FORWARD_DAYS}일 이내
+          경락가가 없으면 추정값을 만들지 않고 이렇게 표시합니다.
+          {!item.unitVerified && (
+            <>
+              {" "}
+              이 품목은 거래단위 환산 근거가 아직 확인되지 않아 시세를 노출하지
+              않습니다.
+            </>
+          )}
+        </p>
+      </div>
+    </main>
+  );
+}
+
 export default async function ItemDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  if (!getCatalogItem(id)) notFound();
+  const base = getCatalogItem(id);
+  if (!base) notFound();
+
   const detail = await getItemDetail(id);
-  if (!detail) notFound();
+  // 카탈로그에 있는 품목이 시세만 없는 것은 "없는 페이지"가 아니다.
+  // 휴장일·수집 실패로 404를 내면 색인된 URL이 사라진다 — 상태를 밝히고 유지한다.
+  if (!detail) return <NoPriceYet item={base} />;
 
   const { item, consumerSeries, stats, source } = detail;
   const meta = COMPASS_META[item.compass];
