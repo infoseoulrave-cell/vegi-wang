@@ -18,6 +18,7 @@
 3. **운영 백엔드 전환과 심사용 빌드는 분리**한다. staging에서 검증한 뒤 production을 붙인 **새 후보 빌드**로만 심사 제출한다.
 4. **로컬 미커밋 변경은 빌드·서버에 반영되지 않은 것**으로 취급한다.
 5. 확인된 사실과 재확인이 필요한 항목을 섞지 않는다. 아래 `[확인됨]` / `[재확인]` / `[미완료]` 표기를 따른다.
+6. **원본 저장소와 출시 작업공간을 섞지 않는다.** 1.0 출시·심사·빌드는 `voiceroom-integration`에서만. 구조 상세는 [WORKSPACE_STRUCTURE.md](./WORKSPACE_STRUCTURE.md).
 
 ---
 
@@ -50,14 +51,26 @@
 | 로컬 미반영 변경사항 커밋 · GitHub 푸시 | `[미완료]` | |
 | 심사용 production 빌드 | `[미완료]` | Build 4와 별개 |
 
-### 1.3 작업처
+### 1.3 작업처 (Release Workspace)
 
-| 구분 | 경로 / 이름 |
-|------|-------------|
-| 실제 출시 개발 | Codex 작업 **VoiceRoom 출시 진두지휘** |
-| 코드 | `.../work/voiceroom-integration` |
-| 원본 저장소 | `C:\Users\Admin\projects\voiceroom` (직접 작업처 아님) |
-| 이 문서 위치 | `vegi-wang` 저장소 `voiceroom-launch/` (계획·추적 문서) |
+```
+projects/voiceroom                    ← 원본(Source) — 마스터 개발 본진
+        │ 복사·출시 통합
+        ▼
+Codex .../work/voiceroom-integration  ← 출시 전용 작업공간 (여기가 실제 출시 작업처)
+        + branch: release/integration-local-2026-07-25
+        + DEVLOG.md
+```
+
+| 구분 | 경로 / 이름 | 역할 |
+|------|-------------|------|
+| 원본 저장소 | `C:\Users\Admin\projects\voiceroom` | 마스터 코드·일상 개발 본진 (출시 직전 핫픽스 본진 아님) |
+| 출시 통합 작업공간 | Codex `.../work/voiceroom-integration` | TestFlight·IAP·정책·심사·출시 버그 수정 |
+| 출시 브랜치 | `release/integration-local-2026-07-25` | 빌드·버그·심사 대응 전용 |
+| 개발일지 | `DEVLOG.md` (통합 워크스페이스) | 날짜별 작업·이유·다음 액션 |
+| 계획·정책 문서 | `vegi-wang` / `voiceroom-launch/` | 게이트 문서·정책 사이트 (앱 런타임 코드 아님) |
+
+출시 이후 권장 분리 (`voiceroom-release` / `hotfix` / `next`)는 [WORKSPACE_STRUCTURE.md](./WORKSPACE_STRUCTURE.md) §2.
 
 ---
 
@@ -412,3 +425,4 @@ Privacy / Terms / Support: Linked in Settings and in App Store metadata.
 |------|------|
 | 2026-07-30 | 초안: 5파동 · 17단계 · 게이트/중단조건. Codex 대화·DEVLOG 주장 및 Apple 공개 요구사항 반영 |
 | 2026-07-30 | `policy-site` 초안 추가. Step 1 문구 초안·Step 2 배포 대기 상태로 갱신 |
+| 2026-07-30 | Release Workspace 역할 분리·출시 후 4폴더 운영안을 `WORKSPACE_STRUCTURE.md`로 문서화 |
