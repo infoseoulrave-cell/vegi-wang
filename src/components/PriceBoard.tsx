@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { CompassBadge, RetailGapBadge } from "@/components/CompassBadge";
 import { PriceSparkline } from "@/components/PriceSparkline";
@@ -67,8 +68,9 @@ export function PriceBoard({ items }: { items: PriceItemWithSignal[] }) {
         {visible.map((item) => {
           const meta = COMPASS_META[item.compass];
           return (
-            <article
+            <Link
               key={item.id}
+              href={`/items/${item.id}`}
               className="nums flex flex-col rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 transition hover:shadow-md hover:ring-brand/20"
             >
               <div className="flex items-start justify-between gap-2">
@@ -84,7 +86,6 @@ export function PriceBoard({ items }: { items: PriceItemWithSignal[] }) {
                 <CompassBadge level={item.compass} />
               </div>
 
-              {/* 최근 동향 그래프 */}
               <div className="mt-4 rounded-xl bg-background/70 px-3 py-2 ring-1 ring-black/5">
                 <div className="mb-1 flex items-center justify-between">
                   <p className="text-[11px] font-semibold text-foreground/55">
@@ -97,7 +98,6 @@ export function PriceBoard({ items }: { items: PriceItemWithSignal[] }) {
                 <PriceSparkline series={item.chartSeries} />
               </div>
 
-              {/* 소비자 단위 도매가 */}
               <div className="mt-4">
                 <p className="text-[11px] font-semibold text-brand-dark">
                   {item.consumerUnit} 도매가 (가락 경락가 기준)
@@ -147,7 +147,10 @@ export function PriceBoard({ items }: { items: PriceItemWithSignal[] }) {
               <p className="mt-3 text-xs leading-relaxed text-foreground/60">
                 {item.recommendation}
               </p>
-            </article>
+              <p className="mt-3 text-xs font-semibold text-brand-dark">
+                상세 그래프 보기 →
+              </p>
+            </Link>
           );
         })}
       </div>
