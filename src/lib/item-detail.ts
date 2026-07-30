@@ -41,6 +41,7 @@ export async function fetchGarakHistory(
   queryName: string,
   endISO: string,
   days = 30,
+  weightKg = 1,
 ): Promise<PricePoint[]> {
   const dates = recentMarketDateCandidates(endISO, days);
   const points: PricePoint[] = [];
@@ -48,7 +49,7 @@ export async function fetchGarakHistory(
   for (let i = 0; i < dates.length; i += batchSize) {
     const batch = dates.slice(i, i + batchSize);
     const prices = await Promise.all(
-      batch.map((d) => fetchGarakAuction(queryName, d)),
+      batch.map((d) => fetchGarakAuction(queryName, d, weightKg)),
     );
     batch.forEach((d, j) => {
       const p = prices[j];
@@ -103,7 +104,7 @@ export async function getItemDetail(
   const q = itemQueryName(base);
 
   const [garakSeries, kamisMap] = await Promise.all([
-    fetchGarakHistory(q, today, 21),
+    fetchGarakHistory(q, today, 21, base.weightKg),
     fetchKamisPrices([base.category], today),
   ]);
 

@@ -106,12 +106,42 @@ export function parseGarakJson(json: unknown): GarakRow[] {
   return rowsToGarak(json);
 }
 
-/** 품목명별 평균 경락가로 집계 (순수 함수, 테스트 대상) */
+/** 품목명별 평균 경락가로 집계 (순수 함수, 테스트 대상) — 상자 단위 그대로 */
 export function aggregateByPummok(rows: GarakRow[]): Map<string, number> {
   const acc = new Map<string, { sum: number; n: number }>();
   for (const r of rows) {
     const cur = acc.get(r.pummok) ?? { sum: 0, n: 0 };
     cur.sum += r.price;
+    cur.n += 1;
+    acc.set(r.pummok, cur);
+  }
+  const out = new Map<string, number>();
+  for (const [k, { sum, n }] of acc) out.set(k, Math.round(sum / n));
+  return out;
+}
+
+/** UUN(거래단량)에서 kg 추출 — "10kg", "10.01kg" 등 */
+export function parseUnitKg(unit: string): number | null {
+  const m = unit.match(/(\d+(?:\.\d+)?)\s*kg/i);
+  if (!m) return null;
+  const kg = Number(m[1]);
+  return kg > 0 ? kg : null;
+}
+
+/**
+ * 품목명별 원/kg 평균.
+ * 가락은 10kg·20kg 등 상자 가격이 섞여 있어 단순 평균하면
+ * KAMIS 1kg 시계열과 비교 시 수백 % 등락이 난다.
+ */
+export function aggregateByPummokPerKg(rows: GarakRow[]): Map<string, number> {
+  const acc = new Map<string, { sum: number; n: number }>();
+  for (const r of rows) {
+    const kg = parseUnitKg(r.unit);
+    if (!kg) continue;
+    const perKg = r.price / kg;
+    if (!(perKg > 0)) continue;
+    const cur = acc.get(r.pummok) ?? { sum: 0, n: 0 };
+    cur.sum += perKg;
     cur.n += 1;
     acc.set(r.pummok, cur);
   }
@@ -157,12 +187,14 @@ async function fetchCorp(
 }
 
 /**
- * 특정 품목의 특정일 평균 경락가(가락 6개 법인 합산)를 조회한다. 실패/무데이터 시 null.
- * 인증정보(GARAK_API_ID/PW, GARAK_AUCTION_DATAID)가 없으면 null.
+ * 특정 품목의 특정일 평균 경락가(가락 6개 법인 합산).
+ * kg 환산 후 catalogWeightKg(거래단위 중량)로 되돌려 반환한다.
+ * 실패/무데이터 시 null.
  */
 export async function fetchGarakAuction(
   itemName: string,
   dateISO: string,
+  catalogWeightKg = 1,
 ): Promise<number | null> {
   if (!process.env.GARAK_API_ID || !process.env.GARAK_API_PW) return null;
   // s_pummok은 부분매칭이므로 괄호/수식어를 제거한 기본 품목명으로 질의한다.
@@ -173,6 +205,11 @@ export async function fetchGarakAuction(
   const all = perCorp.flat();
   if (all.length === 0) return null;
   // PUMMOK이 질의어와 정확히 일치하는 품목만 채택(예: "사과" 질의 시 "대추(사과대추)" 배제)
-  const agg = aggregateByPummok(all);
-  return agg.get(query) ?? agg.get(itemName) ?? null;
+  const exact = all.filter((r) => r.pummok === query || r.pummok === itemName);
+  const perKgMap = aggregateByPummokPerKg(exact.length ? exact : all);
+  const perKg =
+    perKgMap.get(query) ?? perKgMap.get(itemName) ?? null;
+  if (perKg == null || !(perKg > 0)) return null;
+  const w = catalogWeightKg > 0 ? catalogWeightKg : 1;
+  return Math.round(perKg * w);
 }

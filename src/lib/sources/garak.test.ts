@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { aggregateByPummok, parseGarakJson, parseGarakXml } from "./garak";
+import {
+  aggregateByPummok,
+  aggregateByPummokPerKg,
+  parseGarakJson,
+  parseGarakXml,
+  parseUnitKg,
+} from "./garak";
 
 const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <response>
@@ -47,6 +53,50 @@ describe("aggregateByPummok", () => {
     const agg = aggregateByPummok(parseGarakXml(SAMPLE_XML));
     expect(agg.get("사과")).toBe(56500); // (58000 + 55000) / 2
     expect(agg.get("배추")).toBe(9800);
+  });
+});
+
+describe("aggregateByPummokPerKg", () => {
+  it("상자 단위가 달라도 원/kg로 맞춰 평균한다", () => {
+    expect(parseUnitKg("10kg")).toBe(10);
+    expect(parseUnitKg("10.01kg")).toBe(10.01);
+    const rows = [
+      {
+        pummok: "대파",
+        pumjong: "대파",
+        unit: "10kg",
+        grade: "상",
+        price: 19461,
+        origin: "진도",
+        date: "20260730",
+      },
+      {
+        pummok: "대파",
+        pumjong: "대파",
+        unit: "10kg",
+        grade: "상",
+        price: 20000,
+        origin: "진도",
+        date: "20260730",
+      },
+    ];
+    const perKg = aggregateByPummokPerKg(rows).get("대파");
+    expect(perKg).toBe(Math.round((1946.1 + 2000) / 2));
+  });
+
+  it("kg 없는 단위는 제외한다", () => {
+    const rows = [
+      {
+        pummok: "김",
+        pumjong: "",
+        unit: "1속",
+        grade: "상",
+        price: 5000,
+        origin: "",
+        date: "",
+      },
+    ];
+    expect(aggregateByPummokPerKg(rows).size).toBe(0);
   });
 });
 

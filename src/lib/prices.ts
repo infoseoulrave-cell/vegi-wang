@@ -28,7 +28,7 @@ export function pickByName<T>(
 }
 
 async function resolveAuctionToday(
-  queryNames: string[],
+  items: { query: string; weightKg: number }[],
   dateISO: string,
 ): Promise<Map<string, number> | null> {
   const at = await fetchAtAuction(dateISO);
@@ -37,14 +37,14 @@ async function resolveAuctionToday(
   // 품목별 가락 조회를 소배치로 — 타임아웃·레이트리밋 완화
   const map = new Map<string, number>();
   const batchSize = 8;
-  for (let i = 0; i < queryNames.length; i += batchSize) {
-    const batch = queryNames.slice(i, i + batchSize);
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
     const garak = await Promise.all(
-      batch.map((n) => fetchGarakAuction(n, dateISO)),
+      batch.map((it) => fetchGarakAuction(it.query, dateISO, it.weightKg)),
     );
-    batch.forEach((n, j) => {
+    batch.forEach((it, j) => {
       const v = garak[j];
-      if (v != null) map.set(n, v);
+      if (v != null) map.set(it.query, v);
     });
   }
   return map.size ? map : null;
@@ -83,17 +83,34 @@ function latestSeriesPrice(series: PricePoint[] | undefined): number | null {
   return sorted[0]?.price ?? null;
 }
 
+/**
+ * 가락 오늘가와 KAMIS 시계열이 단위가 어긋나면(수 배 차이) KAMIS를 채택.
+ * 예: 10kg 상자가를 1kg로 잘못 쓴 경우.
+ */
+export function reconcileAuctionPrice(
+  garakToday: number | null | undefined,
+  kamisToday: number | null | undefined,
+  fallback: number,
+): number {
+  if (garakToday == null && kamisToday == null) return fallback;
+  if (garakToday == null) return kamisToday ?? fallback;
+  if (kamisToday == null || !(kamisToday > 0)) return garakToday;
+  const ratio = garakToday / kamisToday;
+  if (ratio > 3.5 || ratio < 1 / 3.5) return kamisToday;
+  return garakToday;
+}
+
 export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
   const todayISO = dateISO ?? kstDate(new Date());
 
   // 가락은 청과(채소·과일)만 조회 — 수산·가공은 KAMIS 도매 시리즈로 보완
-  const garakNames = SAMPLE_ITEMS.filter(
+  const garakItems = SAMPLE_ITEMS.filter(
     (i) => i.category === "채소" || i.category === "과일",
-  ).map(itemQueryName);
+  ).map((i) => ({ query: itemQueryName(i), weightKg: i.weightKg }));
 
   // 오늘 경락 + KAMIS(시계열·소매) — 전일 가락 전량 재조회는 생략(시리즈로 대체)
   const [auctionToday, kamis] = await Promise.all([
-    resolveAuctionToday(garakNames, todayISO),
+    resolveAuctionToday(garakItems, todayISO),
     fetchKamisPrices(["채소", "과일", "수산"], todayISO),
   ]);
 
@@ -108,10 +125,14 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
       pickByName(kamis, base.name) ?? pickByName(kamis, q);
 
     const kamisToday = latestSeriesPrice(k?.series);
+    const auctionPrice = reconcileAuctionPrice(
+      aToday,
+      kamisToday,
+      base.auctionPrice,
+    );
     if (aToday != null || kamisToday != null) auctionLive = true;
     if (k?.retailPerKg) retailLive = true;
 
-    const auctionPrice = aToday ?? kamisToday ?? base.auctionPrice;
     const auctionPrevPrice = prevFromSeries(
       k?.series,
       todayISO,
