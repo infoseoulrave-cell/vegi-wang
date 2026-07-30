@@ -9,16 +9,16 @@ export const revalidate = 600;
 export const preferredRegion = "icn1";
 
 const CATEGORY_TILES = [
-  { key: "채소", img: "/images/cat_vegetable.png", desc: "배추·무·대파·감자" },
-  { key: "과일", img: "/images/cat_fruit.png", desc: "사과·배·토마토·딸기" },
-  { key: "수산", img: "/images/cat_seafood.png", desc: "고등어·오징어·새우" },
+  { key: "채소", img: "/images/cat_vegetable.png", desc: "배추·시금치·마늘·당근" },
+  { key: "과일", img: "/images/cat_fruit.png", desc: "사과·포도·감귤·수박" },
+  { key: "수산", img: "/images/cat_seafood.png", desc: "고등어·갈치·명태·멸치" },
 ];
 
 export default async function Home() {
   const feed = await getServedPriceFeed(getRepositories());
-  const cheapCount = feed.items.filter((i) => i.compass === "cheap").length;
+  const lowCount = feed.items.filter((i) => i.trendPosition === "low").length;
   const best = [...feed.items].sort(
-    (a, b) => a.deviationRate - b.deviationRate,
+    (a, b) => a.trendPercentile - b.trendPercentile,
   )[0];
   const bestSaving = [...feed.items].sort(
     (a, b) => b.savingPerUnit - a.savingPerUnit,
@@ -56,17 +56,17 @@ export default async function Home() {
           <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/55 to-black/20" />
           <div className="absolute inset-0 flex flex-col justify-center gap-5 p-7 sm:p-14">
             <span className="w-fit rounded-full bg-white/15 px-3 py-1 text-sm font-semibold text-white backdrop-blur-sm ring-1 ring-white/25">
-              🧭 오늘의 농수산물 가격 나침반
+              📈 최근 시세 동향 포지션
             </span>
             <h1 className="max-w-2xl text-3xl font-extrabold leading-tight tracking-tight text-white sm:text-5xl">
-              가락시장 <span className="text-emerald-300">실제 경매가</span>,
+              가락 <span className="text-emerald-300">아침 경매가</span>와
               <br />
-              오늘 <span className="text-emerald-300">1개 얼마</span>인지
-              알려드릴게요
+              <span className="text-emerald-300">가격 그래프</span>로 보는 지금
+              위치
             </h1>
             <p className="max-w-xl text-base text-white/85 sm:text-lg">
-              매일 아침 도매시장 경락가를 1개·1포기·1마리 기준으로 번역해,
-              소매가와 나란히 보여드립니다. 지금이 사기 좋은 날인지 한눈에.
+              작년·평년 대비보다, 최근 동향에서 이 가격이 저가권인지 고가권인지가
+              중요합니다. 1개·1포기 기준으로 번역해 그래프로 보여드립니다.
             </p>
             <div className="flex flex-wrap gap-3">
               <a
@@ -84,11 +84,12 @@ export default async function Home() {
             </div>
             <div className="nums flex flex-wrap gap-2 pt-1">
               <HeroChip label="기준일" value={feed.date} />
-              <HeroChip label="사기 좋은 품목" value={`${cheapCount}개`} />
+              <HeroChip label="추적 품목" value={`${feed.items.length}개`} />
+              <HeroChip label="최근 저가권" value={`${lowCount}개`} />
               {best && (
                 <HeroChip
-                  label="가장 저렴"
-                  value={`${best.name} ${best.deviationRate}%`}
+                  label="가장 낮은 분위"
+                  value={`${best.name} ${Math.round(best.trendPercentile)}%`}
                 />
               )}
               {bestSaving && (
@@ -138,9 +139,9 @@ export default async function Home() {
         className="mx-auto mt-16 w-full max-w-6xl scroll-mt-6 px-5"
       >
         <div className="mb-5">
-          <h2 className="text-2xl font-bold">오늘의 경락가 · 소매가</h2>
+          <h2 className="text-2xl font-bold">경매가 · 최근 동향 그래프</h2>
           <p className="mt-1 text-sm text-foreground/50">
-            {feed.market} · 1개 기준 · 소매가 KAMIS
+            {feed.market} · 1개 기준 · 그래프는 최근 도매 시세 포지션
             {isSample && (
               <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
                 일부 샘플 데이터
@@ -154,9 +155,9 @@ export default async function Home() {
       {/* 왜 베지왕 */}
       <section className="mx-auto mt-20 grid w-full max-w-6xl gap-4 px-5 sm:grid-cols-3">
         <Feature
-          icon="🧭"
-          title="살 타이밍 나침반"
-          desc="경락가를 평년(최근 30일) 시세와 비교해 '사기 좋은 날'을 신호등처럼. 시세를 몰라도 손해 보지 않게."
+          icon="📈"
+          title="가격 그래프 · 동향 포지션"
+          desc="평년/작년 한 줄 비교 대신, 최근 시세 곡선에서 지금이 저가·중위·고가권인지 보여줍니다."
         />
         <Feature
           icon="⚖️"
@@ -164,9 +165,9 @@ export default async function Home() {
           desc="소매가가 경락가의 몇 배인지 공개. 1개(1포기·1마리)당 얼마 아끼는지까지 계산해 드립니다."
         />
         <Feature
-          icon="📊"
-          title="쌓이는 니즈 DB"
-          desc="관심 품목·알림 신청이 소비자 수요 데이터로 축적되어, 향후 사입·판매 연결의 기반이 됩니다."
+          icon="🧺"
+          title="더 많은 품목"
+          desc="채소·과일·수산 카탈로그를 넓혀 아침 경매가를 소비자 단위로 번역합니다. 이력 DB가 쌓일수록 더 정확해집니다."
         />
       </section>
 

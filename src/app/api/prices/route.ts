@@ -6,6 +6,8 @@ import { getServedPriceFeed } from "@/server/services/price-feed";
 /** KAMIS 등 국내 API WAF를 피하기 위해 서울 리전 우선 */
 export const preferredRegion = "icn1";
 export const revalidate = 600;
+/** 품목 확대 + 가락 배치 조회용 */
+export const maxDuration = 60;
 
 export async function GET(request: Request) {
   const date = new URL(request.url).searchParams.get("date");

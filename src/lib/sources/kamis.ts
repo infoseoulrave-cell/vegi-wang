@@ -1,12 +1,12 @@
-import type { ProduceCategory } from "../types";
+import type { PricePoint, ProduceCategory } from "../types";
+import { normalizeSeries } from "../trend";
 
 /**
  * KAMIS 일별 부류별 도·소매가격 (action=dailyPriceByCategoryList)
- * 응답(JSON) 각 행: item_name, rank, unit, dpr1(당일가), dpr7(평년 가격) 등.
- *   - 도매(02)의 dpr7 → 평년 기준가 (나침반 baseline, 거래단위 가격)
- *   - 소매(01)의 최근 유효 dpr → 소매가 (가능하면 원/kg로 정규화)
- *
- * 주의: 당일(dpr1)·전일(dpr2)이 "-"인 날이 있어 dpr1~dpr6 중 가장 최근 유효값을 사용한다.
+ * 응답(JSON) 각 행: item_name, rank, unit, dpr1~dpr6(시점별), dpr7(평년) 등.
+ *   - 도매(02) dpr1~dpr6 → 최근 동향 그래프/포지션
+ *   - 도매(02) dpr7 → 보조 기준가
+ *   - 소매(01) 최근 유효 dpr → 소매가 (가능하면 원/kg로 정규화)
  */
 
 const ENDPOINT = "https://www.kamis.or.kr/service/price/xml.do";
@@ -25,6 +25,8 @@ export interface KamisRow {
   today: number;
   /** dpr7 평년가 */
   normalYear: number;
+  /** 도매 동향 시계열 (거래단위 가격) */
+  series: PricePoint[];
 }
 
 export interface KamisProbeResult {
@@ -57,6 +59,50 @@ export function latestDailyPrice(it: Record<string, unknown>): number {
     if (n > 0) return n;
   }
   return 0;
+}
+
+/** KAMIS dpr 슬롯 → 기준일로부터의 대략 일수 (공식 라벨 대응) */
+const DPR_DAY_OFFSETS: Record<string, number> = {
+  dpr1: 0,
+  dpr2: 1,
+  dpr3: 7,
+  dpr4: 14,
+  dpr5: 30,
+  dpr6: 365,
+};
+
+const DPR_LABELS: Record<string, string> = {
+  dpr1: "당일",
+  dpr2: "1일전",
+  dpr3: "1주전",
+  dpr4: "2주전",
+  dpr5: "1개월전",
+  dpr6: "1년전",
+};
+
+function shiftDateISO(dateISO: string, daysBack: number): string {
+  const d = new Date(`${dateISO}T12:00:00+09:00`);
+  d.setTime(d.getTime() - daysBack * 24 * 60 * 60 * 1000);
+  return new Date(d.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** dpr1~dpr6을 시계열로 변환 (오래된→최근 순은 normalize에서 정렬) */
+export function extractKamisSeries(
+  it: Record<string, unknown>,
+  regdayISO: string,
+): PricePoint[] {
+  const points: PricePoint[] = [];
+  for (const key of ["dpr1", "dpr2", "dpr3", "dpr4", "dpr5", "dpr6"] as const) {
+    const price = toNum(it[key]);
+    if (!(price > 0)) continue;
+    const offset = DPR_DAY_OFFSETS[key] ?? 0;
+    points.push({
+      date: shiftDateISO(regdayISO, offset),
+      price,
+      label: DPR_LABELS[key],
+    });
+  }
+  return normalizeSeries(points);
 }
 
 /**
@@ -105,18 +151,23 @@ function rankScore(rank: string): number {
 }
 
 /** KAMIS JSON(파싱된 객체) → KamisRow[] (순수 함수, 테스트 대상) */
-export function parseKamisRows(json: unknown): KamisRow[] {
+export function parseKamisRows(
+  json: unknown,
+  regdayISO = "2026-01-01",
+): KamisRow[] {
   const items = extractItems(json);
   const rows: KamisRow[] = [];
   for (const it of items) {
     const itemName = toStr(it.item_name ?? it.itemname ?? it.productName);
     if (!itemName || itemName === "평균") continue;
+    const series = extractKamisSeries(it, regdayISO);
     rows.push({
       itemName,
       rank: toStr(it.rank),
       unit: toStr(it.unit),
       today: latestDailyPrice(it),
       normalYear: toNum(it.dpr7),
+      series,
     });
   }
   return rows;
@@ -197,7 +248,7 @@ async function fetchCategory(
     if (text.includes("Web firewall") || text.trimStart().startsWith("<")) {
       return null;
     }
-    return pickPreferredRows(parseKamisRows(JSON.parse(text)));
+    return pickPreferredRows(parseKamisRows(JSON.parse(text), dateISO));
   } catch {
     return null;
   }
@@ -247,7 +298,7 @@ export async function probeKamis(
       };
     }
     const parsed = JSON.parse(text);
-    const rows = pickPreferredRows(parseKamisRows(parsed));
+    const rows = pickPreferredRows(parseKamisRows(parsed, dateISO));
     const withToday = rows.filter((r) => r.today > 0).length;
     const withBaseline = rows.filter((r) => r.normalYear > 0).length;
     const names = rows.slice(0, 8).map((r) => `${r.itemName}/${r.unit}`);
@@ -292,6 +343,8 @@ export interface KamisPrice {
   /** 소매 최근가 (원/kg 정규화 시도) */
   retailPerKg?: number;
   retailUnit?: string;
+  /** 도매 최근 동향 시계열 (거래단위) */
+  series?: PricePoint[];
 }
 
 /** 소비자 단위 → 대략 kg (소매 포기/개 환산용 힌트) */
@@ -335,9 +388,15 @@ export async function fetchKamisPrices(
     if (!rows) continue;
     for (const row of rows) {
       const cur = map.get(row.itemName) ?? {};
-      if (kind === "wholesale" && row.normalYear) {
-        // 경락 auctionPrice는 거래단위 금액이므로, 도매 평년도 거래단위 축을 유지
-        cur.baseline = row.normalYear;
+      if (kind === "wholesale") {
+        if (row.normalYear) cur.baseline = row.normalYear;
+        if (row.series?.length) cur.series = row.series;
+        // 시리즈 평균을 baseline 보조로 (평년 없을 때)
+        if (!cur.baseline && row.series?.length) {
+          cur.baseline = Math.round(
+            row.series.reduce((a, p) => a + p.price, 0) / row.series.length,
+          );
+        }
       }
       if (kind === "retail" && row.today) {
         const baseName = row.itemName.replace(/\(.*?\)/g, "").trim();
