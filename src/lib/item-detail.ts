@@ -115,12 +115,11 @@ export async function getItemDetail(
     ? "garak"
     : "sample";
 
+  // 가락 일별 이력이 충분하면 단위가 다른 KAMIS 시리즈와 섞지 않는다.
+  // (KAMIS dpr는 거래단위/포기/kg가 섞여 주식 차트가 왜곡됨)
   if (garakSeries.length < 3 && k?.series?.length) {
     auctionSeries = normalizeSeries([...(k.series ?? []), ...garakSeries]);
     auctionHistory = garakSeries.length ? "mixed" : "kamis";
-  } else if (garakSeries.length >= 3 && k?.series?.length) {
-    auctionSeries = normalizeSeries([...garakSeries, ...(k.series ?? [])]);
-    auctionHistory = "mixed";
   }
 
   const latestAuction =
