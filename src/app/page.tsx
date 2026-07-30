@@ -80,10 +80,10 @@ export default async function Home() {
                 오늘 추천 3 보기
               </a>
               <a
-                href="#basket"
+                href="#savings-basket"
                 className="rounded-full bg-white/90 px-6 py-3 font-semibold text-foreground shadow-lg transition hover:bg-white"
               >
-                절약 시뮬 해보기
+                절약 바구니 보기
               </a>
             </div>
             <div className="nums flex flex-wrap gap-2 pt-1">
@@ -168,9 +168,9 @@ export default async function Home() {
           desc="지금 담을 것·관망할 것·소매 거품 큰 것을 한눈에. 시세 해석을 대신해 드립니다."
         />
         <Feature
-          icon="💸"
-          title="장바구니 절약 시뮬"
-          desc="살 품목을 담으면 소매 대비 도매 환산 절약액을 바로 합산합니다."
+          icon="🧺"
+          title="오늘의 절약 바구니"
+          desc="팔지 않습니다. 소매 대비 오늘 사면 이득인 식품만 골라, 장볼 때 참고하게 해드립니다."
         />
         <Feature
           icon="🔔"
