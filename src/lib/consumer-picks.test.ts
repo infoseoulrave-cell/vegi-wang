@@ -22,15 +22,18 @@ function item(
     kgPerConsumerUnit: 1,
     grade: "상",
     origin: "테스트",
-    auctionPrice: 10000,
-    auctionPrevPrice: 10000,
-    auctionBaseline: 10000,
-    retailPricePerKg: 2000,
+    unitVerified: true,
+    baselineMethod: "kamis_dpr7",
+    priceStatus: "live",
+    auctionPerKg: 1000,
+    auctionPrevPerKg: 1000,
+    auctionBaselinePerKg: 1000,
+    retailPerKg: 2000,
     history: [
-      { date: "2026-07-01", price: 12000 },
-      { date: "2026-07-10", price: 11000 },
-      { date: "2026-07-20", price: 10000 },
-      { date: "2026-07-28", price: 9000 },
+      { date: "2026-07-01", price: 1200 },
+      { date: "2026-07-10", price: 1100 },
+      { date: "2026-07-20", price: 1000 },
+      { date: "2026-07-28", price: 900 },
     ],
     ...partial,
   });
@@ -42,81 +45,81 @@ describe("buildTodayPickGroups", () => {
       item({
         id: "cabbage",
         name: "배추",
-        auctionPrice: 6000,
-        retailPricePerKg: 900,
+        auctionPerKg: 600,
+        retailPerKg: 900,
         history: [
-          { date: "2026-07-01", price: 12000 },
-          { date: "2026-07-15", price: 11000 },
-          { date: "2026-07-28", price: 10000 },
+          { date: "2026-07-01", price: 1200 },
+          { date: "2026-07-15", price: 1100 },
+          { date: "2026-07-28", price: 1000 },
         ],
       }),
       item({
         id: "radish",
         name: "무",
-        auctionPrice: 6500,
-        retailPricePerKg: 950,
+        auctionPerKg: 650,
+        retailPerKg: 950,
         history: [
-          { date: "2026-07-01", price: 11500 },
-          { date: "2026-07-15", price: 10800 },
-          { date: "2026-07-28", price: 9800 },
+          { date: "2026-07-01", price: 1150 },
+          { date: "2026-07-15", price: 1080 },
+          { date: "2026-07-28", price: 980 },
         ],
       }),
       item({
         id: "onion",
         name: "양파",
-        auctionPrice: 7000,
-        retailPricePerKg: 1000,
+        auctionPerKg: 700,
+        retailPerKg: 1000,
         history: [
-          { date: "2026-07-01", price: 11000 },
-          { date: "2026-07-15", price: 10500 },
-          { date: "2026-07-28", price: 9500 },
+          { date: "2026-07-01", price: 1100 },
+          { date: "2026-07-15", price: 1050 },
+          { date: "2026-07-28", price: 950 },
         ],
       }),
       item({
         id: "apple",
         name: "사과",
         category: "과일",
-        auctionPrice: 10000,
-        retailPricePerKg: 4500,
+        auctionPerKg: 1000,
+        retailPerKg: 4500,
         history: [
-          { date: "2026-07-01", price: 9000 },
-          { date: "2026-07-15", price: 10000 },
-          { date: "2026-07-28", price: 11000 },
+          { date: "2026-07-01", price: 900 },
+          { date: "2026-07-15", price: 1000 },
+          { date: "2026-07-28", price: 1100 },
         ],
       }),
       item({
         id: "banana",
         name: "바나나",
         category: "과일",
-        auctionPrice: 10000,
-        retailPricePerKg: 4000,
+        auctionPerKg: 1000,
+        retailPerKg: 4000,
         history: [
-          { date: "2026-07-01", price: 8500 },
-          { date: "2026-07-15", price: 9500 },
-          { date: "2026-07-28", price: 12000 },
+          { date: "2026-07-01", price: 850 },
+          { date: "2026-07-15", price: 950 },
+          { date: "2026-07-28", price: 1200 },
         ],
       }),
       item({
         id: "mackerel",
         name: "고등어",
         category: "수산",
-        auctionPrice: 10000,
-        retailPricePerKg: 3800,
+        auctionPerKg: 1000,
+        retailPerKg: 3800,
         history: [
-          { date: "2026-07-01", price: 8000 },
-          { date: "2026-07-15", price: 10000 },
-          { date: "2026-07-28", price: 13000 },
+          { date: "2026-07-01", price: 800 },
+          { date: "2026-07-15", price: 1000 },
+          { date: "2026-07-28", price: 1300 },
         ],
       }),
       // 가공품 — 추천 후보에서 제외되어야 함
       item({
         id: "chili-powder",
         name: "고춧가루",
-        auctionPrice: 5000,
-        retailPricePerKg: 800,
+        auctionPerKg: 500,
+        retailPerKg: 800,
         history: [
-          { date: "2026-07-01", price: 12000 },
-          { date: "2026-07-28", price: 9000 },
+          { date: "2026-07-01", price: 1200 },
+          { date: "2026-07-28", price: 900 },
         ],
       }),
     ];
@@ -133,22 +136,22 @@ describe("buildTodayPickGroups", () => {
     const cheap = item({
       id: "cabbage",
       name: "배추",
-      auctionPrice: 6000,
-      retailPricePerKg: 800,
+      auctionPerKg: 600,
+      retailPerKg: 800,
       history: [
-        { date: "2026-07-01", price: 12000 },
-        { date: "2026-07-28", price: 10000 },
+        { date: "2026-07-01", price: 1200 },
+        { date: "2026-07-28", price: 1000 },
       ],
     });
     const expensive = item({
       id: "apple",
       name: "사과",
       category: "과일",
-      auctionPrice: 15000,
-      retailPricePerKg: 4000,
+      auctionPerKg: 1500,
+      retailPerKg: 4000,
       history: [
-        { date: "2026-07-01", price: 8000 },
-        { date: "2026-07-28", price: 10000 },
+        { date: "2026-07-01", price: 800 },
+        { date: "2026-07-28", price: 1000 },
       ],
     });
     expect(buyScore(cheap)).toBeLessThan(buyScore(expensive));
@@ -162,45 +165,45 @@ describe("buildSavingsBasket", () => {
       id: "grape",
       name: "포도",
       category: "과일",
-      auctionPrice: 10000,
-      retailPricePerKg: 5000,
+      auctionPerKg: 1000,
+      retailPerKg: 5000,
       history: [
-        { date: "2026-07-01", price: 10000 },
-        { date: "2026-07-15", price: 10000 },
-        { date: "2026-07-28", price: 10000 },
+        { date: "2026-07-01", price: 1000 },
+        { date: "2026-07-15", price: 1000 },
+        { date: "2026-07-28", price: 1000 },
       ],
     });
     const fair = item({
       id: "cucumber",
       name: "오이",
-      auctionPrice: 7000,
-      retailPricePerKg: 1100,
+      auctionPerKg: 700,
+      retailPerKg: 1100,
       history: [
-        { date: "2026-07-01", price: 12000 },
-        { date: "2026-07-15", price: 11000 },
-        { date: "2026-07-28", price: 10000 },
+        { date: "2026-07-01", price: 1200 },
+        { date: "2026-07-15", price: 1100 },
+        { date: "2026-07-28", price: 1000 },
       ],
     });
     const mid = item({
       id: "tomato",
       name: "토마토",
-      auctionPrice: 9000,
-      retailPricePerKg: 1400,
+      auctionPerKg: 900,
+      retailPerKg: 1400,
       history: [
-        { date: "2026-07-01", price: 10000 },
-        { date: "2026-07-15", price: 10000 },
-        { date: "2026-07-28", price: 9500 },
+        { date: "2026-07-01", price: 1000 },
+        { date: "2026-07-15", price: 1000 },
+        { date: "2026-07-28", price: 950 },
       ],
     });
     const processed = item({
       id: "sea-salt",
       name: "천일염",
       category: "수산",
-      auctionPrice: 5000,
-      retailPricePerKg: 900,
+      auctionPerKg: 500,
+      retailPerKg: 900,
       history: [
-        { date: "2026-07-01", price: 12000 },
-        { date: "2026-07-28", price: 9000 },
+        { date: "2026-07-01", price: 1200 },
+        { date: "2026-07-28", price: 900 },
       ],
     });
 
@@ -221,11 +224,11 @@ describe("totalBasketSaving", () => {
     const a = item({
       id: "cabbage",
       name: "배추",
-      auctionPrice: 10000,
-      retailPricePerKg: 2500,
+      auctionPerKg: 1000,
+      retailPerKg: 2500,
     });
     const r = totalBasketSaving([a], { cabbage: 2 });
     expect(r.count).toBe(2);
-    expect(r.saving).toBe(a.savingPerUnit * 2);
+    expect(r.saving).toBe((a.savingPerUnit ?? 0) * 2);
   });
 });

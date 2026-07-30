@@ -19,6 +19,7 @@ describe("toRetailGap (유통 거품)", () => {
 });
 
 describe("withSignal (최근 동향 포지션)", () => {
+  // 모든 가격은 원/kg 축이다.
   const cabbage: PriceItem = {
     id: "cabbage",
     name: "배추",
@@ -29,15 +30,18 @@ describe("withSignal (최근 동향 포지션)", () => {
     kgPerConsumerUnit: 2.5,
     grade: "상",
     origin: "강원 평창",
-    auctionPrice: 9000,
-    auctionPrevPrice: 11200,
-    auctionBaseline: 12600,
-    retailPricePerKg: 2500,
+    unitVerified: true,
+    auctionPerKg: 900,
+    auctionPrevPerKg: 1120,
+    auctionBaselinePerKg: 1260,
+    baselineMethod: "kamis_dpr7",
+    retailPerKg: 2500,
+    priceStatus: "live",
     history: [
-      { date: "2026-06-29", price: 14000, label: "1개월전" },
-      { date: "2026-07-15", price: 12000, label: "2주전" },
-      { date: "2026-07-22", price: 11000, label: "1주전" },
-      { date: "2026-07-28", price: 10000, label: "1일전" },
+      { date: "2026-06-29", price: 1400, label: "1개월전" },
+      { date: "2026-07-15", price: 1200, label: "2주전" },
+      { date: "2026-07-22", price: 1100, label: "1주전" },
+      { date: "2026-07-28", price: 1000, label: "1일전" },
     ],
   };
 
@@ -51,10 +55,39 @@ describe("withSignal (최근 동향 포지션)", () => {
     expect(s.recommendation).toContain("저가권");
   });
 
-  it("소비자 단위 환산을 유지한다", () => {
+  /**
+   * 이중 나눗셈 회귀 방지.
+   * withSignal은 원/kg를 입력으로 받아 **곱하기만** 해야 한다.
+   * 예전에는 auctionPrice/weightKg를 수행해 무 36원/kg 같은 값을 만들었다.
+   */
+  it("입력 원/kg를 나누지 않고 상자가·소비자단위가를 곱해서 파생한다", () => {
     const s = withSignal(cabbage);
-    expect(s.consumerAuctionPrice).toBe(2250);
-    expect(s.consumerRetailPrice).toBe(6250);
+    expect(s.auctionPerKg).toBe(900); // 입력 그대로
+    expect(s.auctionUnitPrice).toBe(9000); // 900 × 10kg
+    expect(s.consumerAuctionPrice).toBe(2250); // 900 × 2.5kg
+    expect(s.consumerRetailPrice).toBe(6250); // 2500 × 2.5kg
     expect(s.savingPerUnit).toBe(4000);
+  });
+
+  it("소매가가 없으면 거품 지표를 만들어내지 않는다", () => {
+    const s = withSignal({ ...cabbage, retailPerKg: undefined });
+    expect(s.retailMultiple).toBeUndefined();
+    expect(s.retailGap).toBeUndefined();
+    expect(s.savingPerKg).toBeUndefined();
+    expect(s.consumerRetailPrice).toBeUndefined();
+    expect(s.savingPerUnit).toBeUndefined();
+    // 경락가 쪽 지표는 그대로 살아 있다
+    expect(s.auctionPerKg).toBe(900);
+    expect(s.compass).toBe("cheap");
+  });
+
+  it("이월 상태와 기준일을 그대로 전달한다", () => {
+    const s = withSignal({
+      ...cabbage,
+      priceStatus: "carried",
+      asOfDate: "2026-07-29",
+    });
+    expect(s.priceStatus).toBe("carried");
+    expect(s.asOfDate).toBe("2026-07-29");
   });
 });

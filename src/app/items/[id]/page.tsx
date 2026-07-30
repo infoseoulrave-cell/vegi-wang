@@ -109,7 +109,7 @@ export default async function ItemDetailPage({
             {meta.hint} · 분위 {Math.round(stats.trendPercentile)}%
             <span className="ml-2 text-xs text-foreground/40">
               이력 {source.auctionHistory}
-              {source.retail === "sample" ? " · 소매 샘플" : ""}
+              {source.retail === "none" ? " · 소매 없음" : ""}
             </span>
           </p>
         </div>
@@ -137,7 +137,7 @@ export default async function ItemDetailPage({
         <div className="rounded-2xl bg-white p-5 ring-1 ring-black/5">
           <h2 className="text-sm font-bold">실제 경매 단위</h2>
           <p className="nums mt-2 text-2xl font-extrabold">
-            {won(item.auctionPrice)}
+            {won(item.auctionUnitPrice)}
           </p>
           <p className="mt-1 text-xs text-foreground/50">
             {item.auctionUnit} · kg당 {won(item.auctionPerKg)}

@@ -11,7 +11,7 @@ import type { PriceItemWithSignal } from "@/lib/types";
  */
 export function SavingsBasket({ items }: { items: PriceItemWithSignal[] }) {
   const basket = buildSavingsBasket(items);
-  const totalIfOneEach = basket.reduce((s, i) => s + i.savingPerUnit, 0);
+  const totalIfOneEach = basket.reduce((s, i) => s + (i.savingPerUnit ?? 0), 0);
 
   if (!basket.length) return null;
 
@@ -55,8 +55,8 @@ export function SavingsBasket({ items }: { items: PriceItemWithSignal[] }) {
                   {" · "}
                   절약률{" "}
                   {Math.round(
-                    (item.savingPerUnit /
-                      Math.max(item.consumerRetailPrice, 1)) *
+                    ((item.savingPerUnit ?? 0) /
+                      Math.max(item.consumerRetailPrice ?? 1, 1)) *
                       100,
                   )}
                   %

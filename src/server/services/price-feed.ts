@@ -1,18 +1,34 @@
-import { itemQueryName } from "@/lib/catalog";
+import {
+  kgPerConsumerUnitByName,
+  lookupBySourceName,
+  servableCatalog,
+} from "@/lib/catalog";
 import { withSignal } from "@/lib/compass";
-import { getPriceFeed as getLivePriceFeed, pickByName } from "@/lib/prices";
-import { SAMPLE_ITEMS } from "@/lib/sample-data";
+import {
+  CARRY_FORWARD_DAYS,
+  getPriceFeed as getLivePriceFeed,
+  resolveWithCarryForward,
+} from "@/lib/prices";
 import { fetchKamisPrices } from "@/lib/sources/kamis";
 import { normalizeSeries } from "@/lib/trend";
-import type { PriceFeed, PriceItem, PricePoint } from "@/lib/types";
+import type {
+  BaselineMethod,
+  PriceFeed,
+  PriceItem,
+  PricePoint,
+} from "@/lib/types";
 import { getEnv } from "@/server/config/env";
-import { addDaysISO, todayKST, yesterdayKST } from "@/server/domain/date";
+import { addDaysISO, todayKST } from "@/server/domain/date";
+import type { DailyItemPrice } from "@/server/domain/models";
 import type { Repositories } from "@/server/repos/types";
 import { seedCatalog } from "@/server/services/catalog";
 
 /**
- * DB에 당일 daily_item_price가 있으면 DB+KAMIS로 피드 구성.
- * 없으면 기존 실시간 어댑터(getLivePriceFeed)로 폴백.
+ * DB에 최근 daily_item_price가 있으면 DB로 피드를 구성한다.
+ * 없으면 실시간 어댑터(getLivePriceFeed)로 폴백.
+ *
+ * DB 경로가 실시간 경로보다 나은 이유는 자체 이력이 쌓인다는 점이다 —
+ * item_baseline이 우리 경락가로 산출되면 KAMIS 평년가 의존을 끊을 수 있다.
  */
 export async function getServedPriceFeed(
   repos: Repositories,
@@ -30,45 +46,33 @@ export async function getServedPriceFeed(
     return { ...live, storage: "live" };
   }
 
-  const prevDate = yesterdayKST(saleDate);
-  const prevDaily = await repos.auction.getDaily(marketCode, prevDate);
   const baselines = await repos.auction.listBaselines(
     marketCode,
     saleDate,
     windowDays,
   );
-
-  const todayMap = new Map(daily.map((d) => [d.itemName, d]));
-  const prevMap = new Map(prevDaily.map((d) => [d.itemName, d]));
   const baselineByItemId = new Map(baselines.map((b) => [b.itemId, b]));
 
-  const kamis = await fetchKamisPrices(["채소", "과일", "수산"], saleDate);
+  const kamis = await fetchKamisPrices(
+    ["채소", "과일", "수산"],
+    saleDate,
+    kgPerConsumerUnitByName,
+  );
 
-  let retailLive = false;
+  const catalog = servableCatalog();
+  const dailyByItemId = new Map<string, DailyItemPrice>();
+  for (const d of daily) if (d.itemId) dailyByItemId.set(d.itemId, d);
+
   const fromDate = addDaysISO(saleDate, -(windowDays - 1));
+  let retailLive = false;
   const built: PriceItem[] = [];
 
-  for (const base of SAMPLE_ITEMS) {
-    const q = itemQueryName(base);
-    const d =
-      pickByName(todayMap, base.name) ??
-      pickByName(todayMap, q) ??
-      daily.find((x) => x.itemId === base.id);
-    const p =
-      pickByName(prevMap, base.name) ??
-      pickByName(prevMap, q) ??
-      prevDaily.find((x) => x.itemId === base.id);
-    const bl = baselineByItemId.get(base.id);
-    const k =
-      (kamis ? pickByName(kamis, base.name) : undefined) ??
-      (kamis ? pickByName(kamis, q) : undefined);
+  for (const base of catalog) {
+    const k = lookupBySourceName(kamis, base);
     if (k?.retailPerKg) retailLive = true;
 
-    const auctionPrice = d?.avgPrice ?? base.auctionPrice;
-    const auctionPrevPrice = p?.avgPrice ?? base.auctionPrevPrice;
-
-    // DB 이력이 있으면 우선, 없으면 KAMIS 시리즈
-    let history: PricePoint[] = k?.series ? [...k.series] : [];
+    // 자체 이력 우선 — 없으면 KAMIS 시리즈로 부트스트랩. 둘 다 원/kg 축이다.
+    let history: PricePoint[] = [];
     try {
       const dbHist = await repos.auction.getDailyByItem(
         marketCode,
@@ -76,31 +80,55 @@ export async function getServedPriceFeed(
         fromDate,
         saleDate,
       );
-      if (dbHist.length >= 2) {
-        history = dbHist.map((h) => ({
-          date: h.saleDate,
-          price: h.avgPrice,
-        }));
-      }
+      history = dbHist.map((h) => ({
+        date: h.saleDate,
+        price: h.avgPricePerKg,
+      }));
     } catch {
-      // memory/empty — KAMIS 시리즈 유지
+      // memory 리포지 등 — KAMIS 시리즈로 대체
+    }
+    if (history.length < 2 && k?.seriesPerKg?.length) {
+      history = normalizeSeries([...k.seriesPerKg, ...history]);
+    } else {
+      history = normalizeSeries(history);
     }
 
-    history = normalizeSeries([
-      ...history,
-      { date: saleDate, price: auctionPrice, label: "오늘" },
-    ]);
+    const todayRow = dailyByItemId.get(base.id);
+    const resolved = resolveWithCarryForward(
+      todayRow?.avgPricePerKg ?? null,
+      history,
+      saleDate,
+    );
+    if (!resolved) continue; // 실측도 이월 대상도 없음 → 비노출
+
+    const own = baselineByItemId.get(base.id);
+    const baselinePerKg = own?.avgPricePerKg ?? k?.baselinePerKg ?? 0;
+    const baselineMethod: BaselineMethod = own
+      ? own.method
+      : k?.baselinePerKg
+        ? "kamis_dpr7"
+        : "none";
+
+    const prev = history
+      .filter((p) => p.date < saleDate && p.price > 0)
+      .sort((a, b) => b.date.localeCompare(a.date))[0];
 
     built.push({
       ...base,
-      auctionPrice,
-      auctionPrevPrice,
-      auctionBaseline: bl?.avgPrice ?? k?.baseline ?? base.auctionBaseline,
-      retailPricePerKg: k?.retailPerKg ?? base.retailPricePerKg,
-      auctionUnit: d?.unit || base.auctionUnit,
-      grade: d?.grade || base.grade,
-      origin: d?.origin || base.origin,
-      history,
+      auctionPerKg: resolved.perKg,
+      auctionPrevPerKg: prev?.price ?? resolved.perKg,
+      auctionBaselinePerKg: baselinePerKg,
+      baselineMethod,
+      retailPerKg: k?.retailPerKg,
+      priceStatus: resolved.status,
+      asOfDate: resolved.asOfDate,
+      auctionUnit: todayRow?.unit || base.auctionUnit,
+      grade: todayRow?.grade || base.grade,
+      origin: todayRow?.origin || base.origin,
+      history: normalizeSeries([
+        ...history,
+        { date: saleDate, price: resolved.perKg, label: "오늘" },
+      ]),
     });
   }
 
@@ -113,3 +141,5 @@ export async function getServedPriceFeed(
     storage: "db",
   };
 }
+
+export { CARRY_FORWARD_DAYS };

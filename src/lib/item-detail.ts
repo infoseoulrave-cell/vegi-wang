@@ -1,19 +1,22 @@
-import { itemQueryName } from "@/lib/catalog";
+import {
+  CATALOG_ITEMS,
+  getCatalogItem,
+  itemQueryName,
+  kgPerConsumerUnitByName,
+  lookupBySourceName,
+} from "@/lib/catalog";
 import { withSignal } from "@/lib/compass";
-import { pickByName } from "@/lib/prices";
-import { SAMPLE_ITEMS } from "@/lib/sample-data";
-import { fetchGarakAuction } from "@/lib/sources/garak";
+import { resolveWithCarryForward } from "@/lib/prices";
+import { fetchGarakAuctionPerKg } from "@/lib/sources/garak";
 import { fetchKamisPrices } from "@/lib/sources/kamis";
 import { analyzeTrend, normalizeSeries } from "@/lib/trend";
 import type { PriceItemWithSignal, PricePoint } from "@/lib/types";
 import { addDaysISO, todayKST } from "@/server/domain/date";
 
-export function getCatalogItem(id: string) {
-  return SAMPLE_ITEMS.find((i) => i.id === id) ?? null;
-}
+export { getCatalogItem };
 
 export function listCatalogIds(): string[] {
-  return SAMPLE_ITEMS.map((i) => i.id);
+  return CATALOG_ITEMS.map((i) => i.id);
 }
 
 /** 일요일 제외한 최근 N개 영업일(대략) 후보 일자 */
@@ -34,14 +37,13 @@ export function recentMarketDateCandidates(
 }
 
 /**
- * 단일 품목 가락 일별 경락 시계열.
+ * 단일 품목 가락 일별 경락 시계열 (원/kg).
  * 상세 페이지 전용 — 품목 1개만 조회하므로 피드 전체보다 부하가 작다.
  */
 export async function fetchGarakHistory(
   queryName: string,
   endISO: string,
   days = 30,
-  weightKg = 1,
 ): Promise<PricePoint[]> {
   const dates = recentMarketDateCandidates(endISO, days);
   const points: PricePoint[] = [];
@@ -49,7 +51,7 @@ export async function fetchGarakHistory(
   for (let i = 0; i < dates.length; i += batchSize) {
     const batch = dates.slice(i, i + batchSize);
     const prices = await Promise.all(
-      batch.map((d) => fetchGarakAuction(queryName, d, weightKg)),
+      batch.map((d) => fetchGarakAuctionPerKg(queryName, d)),
     );
     batch.forEach((d, j) => {
       const p = prices[j];
@@ -61,13 +63,13 @@ export async function fetchGarakHistory(
 
 export interface ItemDetail {
   item: PriceItemWithSignal;
-  /** 거래단위 시계열 (차트 원천) */
+  /** 경락 시계열 (원/kg) */
   auctionSeries: PricePoint[];
-  /** 소비자 단위 환산 시계열 (주식 차트 표시용) */
+  /** 소비자 단위 환산 시계열 (차트 표시용) */
   consumerSeries: PricePoint[];
   source: {
-    auctionHistory: "garak" | "kamis" | "mixed" | "sample";
-    retail: "live" | "sample";
+    auctionHistory: "garak" | "kamis" | "mixed" | "none";
+    retail: "live" | "none";
   };
   stats: {
     latest: number;
@@ -80,84 +82,82 @@ export interface ItemDetail {
   };
 }
 
+/** 원/kg 시리즈 → 소비자 단위 환산 (곱하기만 한다) */
 function toConsumerSeries(
   series: PricePoint[],
-  weightKg: number,
   kgPerUnit: number,
 ): PricePoint[] {
-  if (!weightKg) return series;
-  const f = kgPerUnit / weightKg;
-  return series.map((p) => ({ ...p, price: Math.round(p.price * f) }));
+  if (!(kgPerUnit > 0)) return series;
+  return series.map((p) => ({ ...p, price: Math.round(p.price * kgPerUnit) }));
 }
 
 /**
- * 품목 상세: 가락 일별 이력(가능 시) + KAMIS 시리즈/소매를 결합.
+ * 품목 상세: 가락 일별 이력(원/kg) + KAMIS 시리즈/소매를 결합.
+ * 실측이 전혀 없으면 null — 샘플로 채우지 않는다.
  */
 export async function getItemDetail(
   id: string,
   dateISO?: string,
 ): Promise<ItemDetail | null> {
   const base = getCatalogItem(id);
-  if (!base) return null;
+  if (!base || !base.unitVerified) return null;
 
   const today = dateISO ?? todayKST();
   const q = itemQueryName(base);
 
   const [garakSeries, kamisMap] = await Promise.all([
-    fetchGarakHistory(q, today, 21, base.weightKg),
-    fetchKamisPrices([base.category], today),
+    fetchGarakHistory(q, today, 21),
+    fetchKamisPrices([base.category], today, kgPerConsumerUnitByName),
   ]);
 
-  const k =
-    pickByName(kamisMap, base.name) ?? pickByName(kamisMap, q) ?? undefined;
+  const k = lookupBySourceName(kamisMap, base);
 
+  // 두 소스 모두 원/kg 축이므로 이제는 안전하게 합칠 수 있다.
+  // (예전에는 KAMIS dpr가 거래단위/포기/kg가 섞여 있어 섞으면 차트가 왜곡됐다.)
   let auctionSeries = garakSeries;
   let auctionHistory: ItemDetail["source"]["auctionHistory"] = garakSeries.length
     ? "garak"
-    : "sample";
+    : "none";
 
-  // 가락 일별 이력이 충분하면 단위가 다른 KAMIS 시리즈와 섞지 않는다.
-  // (KAMIS dpr는 거래단위/포기/kg가 섞여 주식 차트가 왜곡됨)
-  if (garakSeries.length < 3 && k?.series?.length) {
-    auctionSeries = normalizeSeries([...(k.series ?? []), ...garakSeries]);
+  if (garakSeries.length < 3 && k?.seriesPerKg?.length) {
+    auctionSeries = normalizeSeries([...k.seriesPerKg, ...garakSeries]);
     auctionHistory = garakSeries.length ? "mixed" : "kamis";
   }
 
-  const latestAuction =
-    auctionSeries.filter((p) => p.date === today).at(-1)?.price ??
-    auctionSeries.at(-1)?.price ??
-    base.auctionPrice;
+  const todayPerKg =
+    auctionSeries.filter((p) => p.date === today).at(-1)?.price ?? null;
+  const resolved = resolveWithCarryForward(todayPerKg, auctionSeries, today);
+  if (!resolved) return null;
 
-  const prevAuction =
+  const prevPerKg =
     [...auctionSeries].reverse().find((p) => p.date < today)?.price ??
-    base.auctionPrevPrice;
+    resolved.perKg;
 
-  if (!auctionSeries.some((p) => p.date === today) && latestAuction > 0) {
+  if (!auctionSeries.some((p) => p.date === today)) {
     auctionSeries = normalizeSeries([
       ...auctionSeries,
-      { date: today, price: latestAuction, label: "오늘" },
+      { date: today, price: resolved.perKg, label: "오늘" },
     ]);
   }
 
   const signal = withSignal({
     ...base,
-    auctionPrice: latestAuction,
-    auctionPrevPrice: prevAuction,
-    auctionBaseline: k?.baseline ?? base.auctionBaseline,
-    retailPricePerKg: k?.retailPerKg ?? base.retailPricePerKg,
+    auctionPerKg: resolved.perKg,
+    auctionPrevPerKg: prevPerKg,
+    auctionBaselinePerKg: k?.baselinePerKg ?? 0,
+    baselineMethod: k?.baselinePerKg ? "kamis_dpr7" : "none",
+    retailPerKg: k?.retailPerKg,
+    priceStatus: resolved.status,
+    asOfDate: resolved.asOfDate,
     history: auctionSeries,
   });
 
   const consumerSeries = toConsumerSeries(
     auctionSeries,
-    base.weightKg,
     base.kgPerConsumerUnit,
   );
   const trend = analyzeTrend(consumerSeries, signal.consumerAuctionPrice);
   const values = consumerSeries.map((p) => p.price).filter((v) => v > 0);
-  const prevConsumer = Math.round(
-    (prevAuction / base.weightKg) * base.kgPerConsumerUnit,
-  );
 
   return {
     item: signal,
@@ -165,11 +165,11 @@ export async function getItemDetail(
     consumerSeries,
     source: {
       auctionHistory,
-      retail: k?.retailPerKg ? "live" : "sample",
+      retail: k?.retailPerKg ? "live" : "none",
     },
     stats: {
       latest: signal.consumerAuctionPrice,
-      prev: prevConsumer,
+      prev: Math.round(prevPerKg * base.kgPerConsumerUnit),
       high: values.length ? Math.max(...values) : signal.consumerAuctionPrice,
       low: values.length ? Math.min(...values) : signal.consumerAuctionPrice,
       avg: trend.avg || signal.consumerAuctionPrice,

@@ -4,8 +4,8 @@ import {
   aggregateByPummokPerKg,
   parseGarakJson,
   parseGarakXml,
-  parseUnitKg,
 } from "./garak";
+import { parseUnitKg } from "./unit";
 
 const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <response>

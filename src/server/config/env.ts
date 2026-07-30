@@ -19,6 +19,10 @@ export function getEnv() {
       key: process.env.KAMIS_CERT_KEY?.trim() || null,
       id: process.env.KAMIS_CERT_ID?.trim() || null,
     },
+    naver: {
+      clientId: process.env.NAVER_CLIENT_ID?.trim() || null,
+      clientSecret: process.env.NAVER_CLIENT_SECRET?.trim() || null,
+    },
     defaultMarketCode: process.env.DEFAULT_MARKET_CODE?.trim() || "110001",
     baselineWindowDays: Number(process.env.BASELINE_WINDOW_DAYS ?? 30) || 30,
   };
@@ -35,6 +39,12 @@ export function hasGarakCredentials(): boolean {
 
 export function hasAtCredentials(): boolean {
   return Boolean(getEnv().dataGoKrServiceKey);
+}
+
+/** 네이버 쇼핑 소매가 채널 — 없으면 KAMIS 소매가만 사용 */
+export function hasNaverCredentials(): boolean {
+  const n = getEnv().naver;
+  return Boolean(n.clientId && n.clientSecret);
 }
 
 export function preferredAuctionSource(): AuctionSourceKind {

@@ -55,7 +55,7 @@ export function analyzeTrend(
 
 export function buildTrendRecommendation(
   position: TrendPosition,
-  retailGap: "reasonable" | "normal" | "bubble",
+  retailGap?: "reasonable" | "normal" | "bubble",
 ): string {
   if (position === "high") {
     return "최근 동향 기준 고가권입니다 — 급하지 않다면 추이를 더 지켜보세요.";

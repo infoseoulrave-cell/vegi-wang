@@ -1,12 +1,27 @@
 import type { PricePoint, ProduceCategory } from "../types";
 import { normalizeSeries } from "../trend";
+import { parseUnitKg, unitTotalKg } from "./unit";
 
 /**
  * KAMIS 일별 부류별 도·소매가격 (action=dailyPriceByCategoryList)
  * 응답(JSON) 각 행: item_name, rank, unit, dpr1~dpr6(시점별), dpr7(평년) 등.
- *   - 도매(02) dpr1~dpr6 → 최근 동향 그래프/포지션
- *   - 도매(02) dpr7 → 보조 기준가
- *   - 소매(01) 최근 유효 dpr → 소매가 (가능하면 원/kg로 정규화)
+ *
+ * ⚠ 축 규칙 — 2026-07-31 프로덕션 실측으로 확정.
+ *   `p_convert_kg_yn=Y`는 **중량 기반 단위의 dpr1~dpr4만** 원/kg로 변환한다.
+ *   dpr5(1개월전)·dpr6(1년전)·dpr7(평년)은 변환되지 않고,
+ *   개수 기반 단위("1포기", "10개")는 어떤 슬롯도 변환되지 않는다.
+ *
+ *   근거 (배추 도매, unit="10kg(그물망 3포기)"):
+ *     dpr2=1,128 → 원/kg   (같은 날 가락 경락가 1,895원/kg과 정합)
+ *     dpr7=13,146 → 원/10kg (÷10 = 1,315원/kg. 원/kg로 읽으면 배추 평년가가
+ *                            13,146원/kg이 되어 물리적으로 불가능)
+ *   교차 사례: 시금치 소매 unit="100g" dpr2=16,128 → 원/kg (변환됨)
+ *             배추 소매 unit="1포기" dpr2=4,018 → 원/포기 (변환 안 됨)
+ *
+ *   이 규칙을 무시하고 dpr1~dpr6을 한 시계열로 합치면 두 축이 섞여
+ *   편차율이 -89%~+218%로 널뛴다. 실제로 그렇게 되어 있었다.
+ *
+ * 설계: docs/superpowers/specs/2026-07-31-price-axis-and-baseline-design.md
  */
 
 const ENDPOINT = "https://www.kamis.or.kr/service/price/xml.do";
@@ -17,16 +32,40 @@ export const KAMIS_CATEGORY_CODE: Record<ProduceCategory, string> = {
   수산: "600",
 };
 
+/** KAMIS 가격 슬롯 */
+export type DprSlot =
+  | "dpr1"
+  | "dpr2"
+  | "dpr3"
+  | "dpr4"
+  | "dpr5"
+  | "dpr6"
+  | "dpr7";
+
+export const DPR_SLOTS: readonly DprSlot[] = [
+  "dpr1",
+  "dpr2",
+  "dpr3",
+  "dpr4",
+  "dpr5",
+  "dpr6",
+  "dpr7",
+] as const;
+
+/** `p_convert_kg_yn=Y`가 실제로 원/kg로 변환해 주는 슬롯 (중량 단위 한정) */
+export const KG_CONVERTED_SLOTS: ReadonlySet<DprSlot> = new Set<DprSlot>([
+  "dpr1",
+  "dpr2",
+  "dpr3",
+  "dpr4",
+]);
+
 export interface KamisRow {
   itemName: string;
   rank: string;
   unit: string;
-  /** dpr1~dpr6 중 가장 최근 유효 일별가 */
-  today: number;
-  /** dpr7 평년가 */
-  normalYear: number;
-  /** 도매 동향 시계열 (거래단위 가격) */
-  series: PricePoint[];
+  /** 슬롯별 원시값 — 축 변환 전. 0은 결측(`-`) */
+  raw: Record<DprSlot, number>;
 }
 
 export interface KamisProbeResult {
@@ -52,13 +91,38 @@ function toStr(v: unknown): string {
   return v == null ? "" : String(v).trim();
 }
 
-/** dpr1(당일) → dpr6(1년전) 순으로 첫 유효 숫자 */
-export function latestDailyPrice(it: Record<string, unknown>): number {
+/** dpr1(당일) → dpr6(1년전) 순으로 첫 유효 숫자가 나오는 슬롯 */
+export function latestDailySlot(raw: Record<DprSlot, number>): DprSlot | null {
   for (const key of ["dpr1", "dpr2", "dpr3", "dpr4", "dpr5", "dpr6"] as const) {
-    const n = toNum(it[key]);
-    if (n > 0) return n;
+    if (raw[key] > 0) return key;
   }
-  return 0;
+  return null;
+}
+
+/**
+ * 슬롯 원시값을 원/kg로 환산한다. 환산 근거가 없으면 null — 추정하지 않는다.
+ *
+ * @param kgPerPiece 개수 기반 단위일 때 1개의 검증된 중량(kg). 카탈로그에서만 온다.
+ */
+export function resolveKamisPerKg(
+  slot: DprSlot,
+  value: number,
+  unit: string,
+  kgPerPiece?: number | null,
+): number | null {
+  if (!(value > 0)) return null;
+
+  const unitKg = parseUnitKg(unit);
+  if (unitKg != null) {
+    // 중량 기반 단위 — dpr1~dpr4는 이미 원/kg, 나머지는 거래단위 가격
+    if (KG_CONVERTED_SLOTS.has(slot)) return Math.round(value);
+    return Math.round(value / unitKg);
+  }
+
+  // 개수 기반 단위 — 어떤 슬롯도 변환되지 않는다. 검증된 중량이 있어야만 환산.
+  const totalKg = unitTotalKg(unit, kgPerPiece);
+  if (totalKg == null || !(totalKg > 0)) return null;
+  return Math.round(value / totalKg);
 }
 
 /** KAMIS dpr 슬롯 → 기준일로부터의 대략 일수 (공식 라벨 대응) */
@@ -86,49 +150,26 @@ function shiftDateISO(dateISO: string, daysBack: number): string {
   return new Date(d.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-/** dpr1~dpr6을 시계열로 변환 (오래된→최근 순은 normalize에서 정렬) */
-export function extractKamisSeries(
-  it: Record<string, unknown>,
+/**
+ * dpr1~dpr6을 **원/kg 축의** 시계열로 변환한다.
+ * 축을 환산할 수 없는 슬롯은 넣지 않는다 — 섞느니 비우는 편이 낫다.
+ */
+export function extractKamisSeriesPerKg(
+  row: KamisRow,
   regdayISO: string,
+  kgPerPiece?: number | null,
 ): PricePoint[] {
   const points: PricePoint[] = [];
   for (const key of ["dpr1", "dpr2", "dpr3", "dpr4", "dpr5", "dpr6"] as const) {
-    const price = toNum(it[key]);
-    if (!(price > 0)) continue;
-    const offset = DPR_DAY_OFFSETS[key] ?? 0;
+    const perKg = resolveKamisPerKg(key, row.raw[key], row.unit, kgPerPiece);
+    if (perKg == null) continue;
     points.push({
-      date: shiftDateISO(regdayISO, offset),
-      price,
+      date: shiftDateISO(regdayISO, DPR_DAY_OFFSETS[key] ?? 0),
+      price: perKg,
       label: DPR_LABELS[key],
     });
   }
   return normalizeSeries(points);
-}
-
-/**
- * KAMIS 단위 문자열을 원/kg로 정규화.
- * - "1kg", "10kg ..." → 명시 kg로 나눔
- * - "10개"/"1포기" 등 + 힌트 kg → (개수×힌트 kg)로 나눔
- * - 힌트 없으면 원가 그대로(호출측에서 거래단위 비교용으로 쓸 수 있음)
- */
-export function normalizeKamisPriceToPerKg(
-  price: number,
-  unit: string,
-  kgHint?: number,
-): number {
-  if (!price) return 0;
-  const m = unit.match(/(\d+(?:\.\d+)?)\s*kg/i);
-  if (m) {
-    const kg = Number(m[1]);
-    return kg > 0 ? Math.round(price / kg) : price;
-  }
-  if (kgHint && kgHint > 0 && /(포기|개|단|마리|팩|송이|손)/.test(unit)) {
-    const countMatch = unit.match(/(\d+)\s*(포기|개|단|마리|팩|송이|손)/);
-    const count = countMatch ? Number(countMatch[1]) : 1;
-    const totalKg = kgHint * (count > 0 ? count : 1);
-    return totalKg > 0 ? Math.round(price / totalKg) : price;
-  }
-  return price;
 }
 
 function extractItems(data: unknown): Record<string, unknown>[] {
@@ -158,19 +199,20 @@ export function parseKamisRows(
   json: unknown,
   regdayISO = "2026-01-01",
 ): KamisRow[] {
+  void regdayISO;
   const items = extractItems(json);
   const rows: KamisRow[] = [];
   for (const it of items) {
     const itemName = toStr(it.item_name ?? it.itemname ?? it.productName);
     if (!itemName || itemName === "평균") continue;
-    const series = extractKamisSeries(it, regdayISO);
+    const raw = Object.fromEntries(
+      DPR_SLOTS.map((s) => [s, toNum(it[s])]),
+    ) as Record<DprSlot, number>;
     rows.push({
       itemName,
       rank: toStr(it.rank),
       unit: toStr(it.unit),
-      today: latestDailyPrice(it),
-      normalYear: toNum(it.dpr7),
-      series,
+      raw,
     });
   }
   return rows;
@@ -302,8 +344,8 @@ export async function probeKamis(
     }
     const parsed = JSON.parse(text);
     const rows = pickPreferredRows(parseKamisRows(parsed, dateISO));
-    const withToday = rows.filter((r) => r.today > 0).length;
-    const withBaseline = rows.filter((r) => r.normalYear > 0).length;
+    const withToday = rows.filter((r) => latestDailySlot(r.raw) != null).length;
+    const withBaseline = rows.filter((r) => r.raw.dpr7 > 0).length;
     const names = rows.slice(0, 8).map((r) => `${r.itemName}/${r.unit}`);
     const rawItems = extractItems(parsed);
     const sample =
@@ -340,46 +382,24 @@ export async function probeKamisRetail(dateISO: string): Promise<KamisProbeResul
   return probeKamis(dateISO, "01");
 }
 
+/** KAMIS에서 뽑아낸 값 — **전부 원/kg 축**이다. 환산 불가 항목은 아예 없다. */
 export interface KamisPrice {
-  /** 도매 평년가 — 거래단위 기준(경락 auctionPrice와 동일 축) */
-  baseline?: number;
-  /** 소매 최근가 (원/kg 정규화 시도) */
+  /** 도매 평년가(dpr7) 원/kg — 자체 이력이 쌓이기 전 부트스트랩 기준선 */
+  baselinePerKg?: number;
+  /** 도매 최근 동향 시계열 원/kg */
+  seriesPerKg?: PricePoint[];
+  /** 소매 최근가 원/kg */
   retailPerKg?: number;
   retailUnit?: string;
-  /** 도매 최근 동향 시계열 (거래단위) */
-  series?: PricePoint[];
+  wholesaleUnit?: string;
 }
 
-/** 소비자 단위 → 대략 kg (소매 포기/개 환산용 힌트) */
-const CONSUMER_KG_HINT: Record<string, number> = {
-  배추: 2.8,
-  무: 1.8,
-  양파: 0.25,
-  대파: 1,
-  파: 1,
-  애호박: 0.35,
-  호박: 0.3,
-  토마토: 0.18,
-  수박: 6,
-  멜론: 1.5,
-  참외: 0.4,
-  양배추: 1.5,
-  알배기배추: 1.5,
-  사과: 0.25,
-  배: 0.55,
-  감귤: 0.1,
-  포도: 0.7,
-  복숭아: 0.3,
-  바나나: 0.12,
-  오렌지: 0.2,
-  레몬: 0.12,
-  망고: 0.35,
-  파인애플: 1.5,
-  참다래: 0.1,
-  오이: 0.18,
-  마늘: 0.03,
-  깐마늘: 0.03,
-};
+/**
+ * 품목명 → 개수 기반 단위 1개의 검증된 중량(kg).
+ * 카탈로그가 단일 출처다 — 이 모듈은 자체 힌트 테이블을 갖지 않는다.
+ * (과거 CONSUMER_KG_HINT 상수가 카탈로그와 이중 관리되어 값이 갈렸다.)
+ */
+export type KgPerPieceResolver = (itemName: string) => number | null;
 
 /**
  * 필요한 부류(category)에 대해 도매/소매를 조회하고 품목명 기준으로 합친다.
@@ -432,14 +452,18 @@ export async function listKamisCatalogItems(
     for (const name of names) {
       const w = wMap.get(name);
       const r = rMap.get(name);
-      if (!(w?.today || w?.normalYear || w?.series?.length || r?.today)) continue;
+      const hasWholesale = Boolean(
+        w && (latestDailySlot(w.raw) != null || w.raw.dpr7 > 0),
+      );
+      const hasRetail = Boolean(r && latestDailySlot(r.raw) != null);
+      if (!hasWholesale && !hasRetail) continue;
       out.push({
         category: cat,
         name,
         wholesaleUnit: w?.unit ?? "",
         retailUnit: r?.unit ?? "",
-        hasWholesale: Boolean(w?.today || w?.series?.length || w?.normalYear),
-        hasRetail: Boolean(r?.today),
+        hasWholesale,
+        hasRetail,
       });
     }
   }
@@ -450,6 +474,7 @@ export async function listKamisCatalogItems(
 export async function fetchKamisPrices(
   categories: ProduceCategory[],
   dateISO: string,
+  kgPerPiece: KgPerPieceResolver = () => null,
 ): Promise<Map<string, KamisPrice> | null> {
   const unique = [...new Set(categories)];
   const jobs = unique.flatMap((cat) => {
@@ -474,22 +499,35 @@ export async function fetchKamisPrices(
     if (!rows) continue;
     for (const row of rows) {
       const cur = map.get(row.itemName) ?? {};
+      const kg = kgPerPiece(row.itemName);
+
       if (kind === "wholesale") {
-        if (row.normalYear) cur.baseline = row.normalYear;
-        if (row.series?.length) cur.series = row.series;
-        // 시리즈 평균을 baseline 보조로 (평년 없을 때)
-        if (!cur.baseline && row.series?.length) {
-          cur.baseline = Math.round(
-            row.series.reduce((a, p) => a + p.price, 0) / row.series.length,
+        cur.wholesaleUnit = row.unit;
+        const series = extractKamisSeriesPerKg(row, dateISO, kg);
+        if (series.length) cur.seriesPerKg = series;
+
+        // 평년가(dpr7)는 중량 단위에서도 변환되지 않으므로 반드시 축 해석을 거친다.
+        const baseline = resolveKamisPerKg("dpr7", row.raw.dpr7, row.unit, kg);
+        if (baseline != null) cur.baselinePerKg = baseline;
+        else if (series.length) {
+          // 평년가가 없을 때만 시리즈 평균으로 대체 — 이미 원/kg 축이다.
+          cur.baselinePerKg = Math.round(
+            series.reduce((a, p) => a + p.price, 0) / series.length,
           );
         }
       }
-      if (kind === "retail" && row.today) {
-        const baseName = row.itemName.replace(/\(.*?\)/g, "").trim();
-        const hint = CONSUMER_KG_HINT[baseName] ?? CONSUMER_KG_HINT[row.itemName];
-        cur.retailPerKg = normalizeKamisPriceToPerKg(row.today, row.unit, hint);
-        cur.retailUnit = row.unit;
+
+      if (kind === "retail") {
+        const slot = latestDailySlot(row.raw);
+        const perKg = slot
+          ? resolveKamisPerKg(slot, row.raw[slot], row.unit, kg)
+          : null;
+        if (perKg != null) {
+          cur.retailPerKg = perKg;
+          cur.retailUnit = row.unit;
+        }
       }
+
       map.set(row.itemName, cur);
     }
   }

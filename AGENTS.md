@@ -10,6 +10,27 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 - 실행/검증 명령은 `package.json` 스크립트 참고: `npm run dev` (Turbopack, http://localhost:3000), `npm run lint`, `npm run build`, `npm test`(vitest). Next 16은 dev/build 모두 Turbopack을 사용한다.
 - 백엔드 구조는 `docs/BACKEND.md` + `src/server/` 참고. 시세 서빙은 `getServedPriceFeed`(DB `daily_item_price` 우선) → 없으면 `src/lib/prices.ts` 실시간 폴백. 수집은 `/api/cron/ingest`(Vercel Cron 08:00 KST)가 aT→garak 순으로 `raw_auction`에 멱등 upsert 후 집계.
-- 실시간 폴백 필드 조합: 경락가=가락/aT(`src/lib/sources/*`), 평년·소매=KAMIS. 샘플 오버레이·파서 단위테스트·나침반 임계값(`compass.ts`, ±10% / 1.8·2.5)은 기존과 동일. 가락은 계정(id/passwd)+dataid 인증.
 - 대기자: `DATABASE_URL` 있으면 Postgres `waitlist`, 없으면 `.data/waitlist.json`(+인메모리 폴백).
 - 기준일은 KST(`src/server/domain/date.ts`). 스토리지: `DATABASE_URL`→Postgres, 없으면 메모리 리포지.
+
+## ⚠ 가격 축 불변식 — 깨뜨리면 서비스가 거짓말을 한다
+
+설계: `docs/superpowers/specs/2026-07-31-price-axis-and-baseline-design.md`
+
+1. **내부 표준축은 원/kg 하나다.** 나눗셈은 소스 어댑터 안에서만 일어난다.
+   그 뒤로는 **곱하기만** 한다 — 상자가 = `perKg × weightKg`, 1개가 = `perKg × kgPerConsumerUnit`.
+   `withSignal`에 나눗셈을 다시 넣으면 이중 나눗셈 버그가 되살아난다(무 36원/kg, 거품배수 64배).
+2. **KAMIS dpr 슬롯은 축이 섞여 있다.** `p_convert_kg_yn=Y`는 **중량 기반 단위의 dpr1~dpr4만**
+   원/kg로 바꾼다. dpr5·dpr6·dpr7과 개수 기반 단위("1포기","10개")는 변환되지 않는다.
+   반드시 `resolveKamisPerKg(slot, value, unit, kgPerPiece)`를 거칠 것. 회귀 테스트는 `kamis.test.ts`.
+3. **경락가의 유일한 원천은 가락**이다. 행마다 UUN을 주므로 자기완결적 환산이 된다.
+   KAMIS 도매는 교차검증·부트스트랩 전용. 주 원천으로 쓰면 안 된다.
+4. **추정 금지.** 환산 근거(단위 문자열 또는 검증된 카탈로그 중량)가 없으면 `null`을 반환한다.
+   1kg으로 가정하거나 샘플값으로 채우지 않는다. 하드코딩 가격 더미는 전량 제거됐다.
+5. **검증된 품목만 노출.** `servableCatalog()`(= `unitVerified: true`)만 서빙한다.
+   판정: `node scripts/verify-catalog.mjs` → `docs/CATALOG_VERIFICATION.md` (현재 47/56 통과).
+6. **결측은 이월 7일 + 날짜 라벨, 그 밖은 비노출.** `priceStatus`/`asOfDate`를 UI에서 반드시 표시.
+7. **기준선은 근거를 밝힌다.** `baselineMethod`(`kamis_dpr7`/`moving_avg_30`/`seasonal`).
+   자체 이력이 14일 미만이면 이동평균인 척하지 않는다(`MIN_BASELINE_SAMPLE_DAYS`).
+
+진단: `/api/debug/price-axis` — 품목별 두 소스의 원/kg를 나란히 덤프. 축이 어긋나면 여기서 먼저 보인다.

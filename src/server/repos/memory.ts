@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type {
-  CatalogItem,
+  ItemMaster,
   DailyItemPrice,
   IngestRun,
   ItemBaseline,
@@ -21,7 +21,7 @@ function store() {
   const g = globalThis as unknown as {
     __vegiwangMemory?: {
       markets: Map<string, Market>;
-      items: Map<string, CatalogItem>;
+      items: Map<string, ItemMaster>;
       raw: Map<string, RawAuctionRecord>;
       daily: Map<string, DailyItemPrice>;
       baselines: Map<string, ItemBaseline>;
@@ -137,17 +137,17 @@ class MemoryCatalogRepo implements CatalogRepository {
     return [...store().markets.values()];
   }
 
-  async upsertItems(items: CatalogItem[]): Promise<number> {
+  async upsertItems(items: ItemMaster[]): Promise<number> {
     const s = store();
     for (const i of items) s.items.set(i.id, i);
     return items.length;
   }
 
-  async listItems(): Promise<CatalogItem[]> {
+  async listItems(): Promise<ItemMaster[]> {
     return [...store().items.values()].filter((i) => i.isActive);
   }
 
-  async findItemByName(name: string): Promise<CatalogItem | null> {
+  async findItemByName(name: string): Promise<ItemMaster | null> {
     const items = await this.listItems();
     const exact = items.find((i) => i.name === name);
     if (exact) return exact;

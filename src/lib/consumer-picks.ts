@@ -25,7 +25,11 @@ export function buyScore(item: PriceItemWithSignal): number {
       : item.retailGap === "normal"
         ? 12
         : 0;
-  const multiplePenalty = Math.max(0, (item.retailMultiple - 1.5) * 10);
+  // 소매가가 없으면 거품 페널티를 매길 근거가 없다 — 추세만으로 판단한다.
+  const multiplePenalty =
+    item.retailMultiple == null
+      ? 0
+      : Math.max(0, (item.retailMultiple - 1.5) * 10);
   return item.trendPercentile + bubblePenalty + multiplePenalty;
 }
 
@@ -33,7 +37,10 @@ export function buyScore(item: PriceItemWithSignal): number {
 export function watchScore(item: PriceItemWithSignal): number {
   const bubbleBoost =
     item.retailGap === "bubble" ? 50 : item.retailGap === "normal" ? 15 : 0;
-  const multipleBoost = Math.max(0, (item.retailMultiple - 1.8) * 25);
+  const multipleBoost =
+    item.retailMultiple == null
+      ? 0
+      : Math.max(0, (item.retailMultiple - 1.8) * 25);
   return multipleBoost + bubbleBoost + item.trendPercentile * 0.35;
 }
 
@@ -45,9 +52,16 @@ export function watchScore(item: PriceItemWithSignal): number {
  * 소매 대비 실질 절약률이 있는 품목.
  */
 export function savingsBasketScore(item: PriceItemWithSignal): number {
-  if (item.savingPerUnit <= 0) return Number.NEGATIVE_INFINITY;
+  // 소매가가 없으면 절약액을 계산할 수 없다 — 후보에서 뺀다.
+  if (item.savingPerUnit == null || item.savingPerUnit <= 0) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  if (item.consumerRetailPrice == null) return Number.NEGATIVE_INFINITY;
   // 거품·고가권은 관망 섹션 몫 — 절약 바구니에서 제외
-  if (item.retailGap === "bubble" || item.retailMultiple >= BUBBLE_MIN) {
+  if (
+    item.retailGap === "bubble" ||
+    (item.retailMultiple != null && item.retailMultiple >= BUBBLE_MIN)
+  ) {
     return Number.NEGATIVE_INFINITY;
   }
   if (item.trendPosition === "high") return Number.NEGATIVE_INFINITY;
@@ -100,7 +114,7 @@ function watchTitle(item: PriceItemWithSignal): {
   if (item.retailGap === "bubble") {
     return {
       title: "소매 거품 주의",
-      subtitle: `소매÷도매 ${item.retailMultiple}배 — 관망·직거래 유리`,
+      subtitle: `소매÷도매 ${item.retailMultiple ?? "?"}배 — 관망·직거래 유리`,
     };
   }
   if (item.trendPosition === "high") {
@@ -166,7 +180,7 @@ export function buildTodayPickGroups(
     if (
       item.retailGap !== "bubble" &&
       item.trendPosition !== "high" &&
-      item.retailMultiple < 2
+      (item.retailMultiple ?? 0) < 2
     ) {
       continue;
     }
@@ -214,6 +228,7 @@ export function totalBasketSaving(
   for (const item of items) {
     const q = Math.max(0, Math.floor(qtyById[item.id] ?? 0));
     if (!q) continue;
+    if (item.consumerRetailPrice == null || item.savingPerUnit == null) continue;
     count += q;
     wholesale += item.consumerAuctionPrice * q;
     retail += item.consumerRetailPrice * q;

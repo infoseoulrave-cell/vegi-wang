@@ -91,27 +91,33 @@ export function buildRecommendation(
   return buildTrendRecommendation(position, gap);
 }
 
+/** 원/kg 시리즈를 소비자 단위 환산 시리즈로 (곱하기만 한다) */
 function toConsumerSeries(
   series: PricePoint[],
-  weightKg: number,
   kgPerConsumerUnit: number,
 ): PricePoint[] {
-  if (!weightKg) return series;
-  const factor = kgPerConsumerUnit / weightKg;
+  if (!(kgPerConsumerUnit > 0)) return series;
   return series.map((p) => ({
     ...p,
-    price: Math.round(p.price * factor),
+    price: Math.round(p.price * kgPerConsumerUnit),
   }));
 }
 
+/**
+ * 실측 원/kg 가격에 신호를 붙인다.
+ *
+ * 입력이 이미 원/kg 축이므로 **여기서는 어떤 나눗셈도 하지 않는다.**
+ * 상자가·소비자단위가는 전부 곱해서 파생한다. 이 불변식이 깨지면
+ * 예전처럼 weightKg로 두 번 나누는 버그가 되살아난다.
+ */
 export function withSignal(item: PriceItem): PriceItemWithSignal {
-  const auctionPerKg = Math.round(item.auctionPrice / item.weightKg);
-  const changeRate = pct(item.auctionPrice, item.auctionPrevPrice);
+  const perKg = item.auctionPerKg;
+  const changeRate = pct(perKg, item.auctionPrevPerKg);
 
   const history = normalizeSeries(item.history ?? []);
-  const trend = analyzeTrend(history, item.auctionPrice);
-  const baseline = trend.avg || item.auctionBaseline;
-  const deviationRate = pct(item.auctionPrice, baseline);
+  const trend = analyzeTrend(history, perKg);
+  const baseline = item.auctionBaselinePerKg || trend.avg;
+  const deviationRate = pct(perKg, baseline);
   const compass = history.length
     ? trendToCompass(trend.position)
     : toCompass(deviationRate);
@@ -130,49 +136,49 @@ export function withSignal(item: PriceItem): PriceItemWithSignal {
         ? 80
         : 50;
 
+  // 거품 배수는 양쪽이 모두 실측일 때만 산출한다. 한쪽이 없으면 표시하지 않는다.
+  const hasRetail = item.retailPerKg != null && item.retailPerKg > 0;
   const retailMultiple =
-    Math.round((item.retailPricePerKg / auctionPerKg) * 100) / 100;
-  const retailGap = toRetailGap(retailMultiple);
-  const savingPerKg = Math.max(item.retailPricePerKg - auctionPerKg, 0);
+    hasRetail && perKg > 0
+      ? Math.round((item.retailPerKg! / perKg) * 100) / 100
+      : undefined;
+  const retailGap =
+    retailMultiple != null ? toRetailGap(retailMultiple) : undefined;
+  const savingPerKg = hasRetail
+    ? Math.max(item.retailPerKg! - perKg, 0)
+    : undefined;
 
-  const consumerAuctionPrice = Math.round(
-    auctionPerKg * item.kgPerConsumerUnit,
-  );
-  const consumerRetailPrice = Math.round(
-    item.retailPricePerKg * item.kgPerConsumerUnit,
-  );
-  const savingPerUnit = Math.max(consumerRetailPrice - consumerAuctionPrice, 0);
+  const auctionUnitPrice = Math.round(perKg * item.weightKg);
+  const consumerAuctionPrice = Math.round(perKg * item.kgPerConsumerUnit);
+  const consumerRetailPrice = hasRetail
+    ? Math.round(item.retailPerKg! * item.kgPerConsumerUnit)
+    : undefined;
+  const savingPerUnit =
+    consumerRetailPrice != null
+      ? Math.max(consumerRetailPrice - consumerAuctionPrice, 0)
+      : undefined;
 
   const chartSeries = toConsumerSeries(
     history.length
       ? history
       : [
-          {
-            date: "prev",
-            price: item.auctionPrevPrice,
-            label: "전일",
-          },
-          {
-            date: "today",
-            price: item.auctionPrice,
-            label: "오늘",
-          },
+          { date: "prev", price: item.auctionPrevPerKg, label: "전일" },
+          { date: "today", price: perKg, label: "오늘" },
         ],
-    item.weightKg,
     item.kgPerConsumerUnit,
   );
 
   return {
     ...item,
     history,
-    auctionBaseline: baseline,
-    auctionPerKg,
+    auctionBaselinePerKg: baseline,
     changeRate,
     deviationRate,
     compass,
     trendPercentile,
     trendPosition,
     chartSeries,
+    auctionUnitPrice,
     retailMultiple,
     retailGap,
     savingPerKg,

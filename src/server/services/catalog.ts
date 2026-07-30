@@ -1,5 +1,5 @@
-import { SAMPLE_ITEMS } from "@/lib/sample-data";
-import type { CatalogItem, Market } from "@/server/domain/models";
+import { CATALOG_ITEMS } from "@/lib/catalog";
+import type { ItemMaster, Market } from "@/server/domain/models";
 import type { Repositories } from "@/server/repos/types";
 
 export const GARAK_MARKET: Market = {
@@ -9,8 +9,15 @@ export const GARAK_MARKET: Market = {
   isActive: true,
 };
 
-export function catalogFromSample(): CatalogItem[] {
-  return SAMPLE_ITEMS.map((i) => ({
+/**
+ * 프론트 카탈로그를 DB 품목 마스터로 변환한다.
+ *
+ * 미검증 품목도 DB에는 적재한다 — 이력을 쌓아 두면 나중에 환산 근거가
+ * 확보됐을 때 재집계할 수 있다. 다만 `isActive`는 검증 여부를 따르므로
+ * 서빙에는 나가지 않는다.
+ */
+export function catalogFromSource(): ItemMaster[] {
+  return CATALOG_ITEMS.map((i) => ({
     id: i.id,
     name: i.name,
     category: i.category,
@@ -18,7 +25,8 @@ export function catalogFromSample(): CatalogItem[] {
     weightKg: i.weightKg,
     defaultGrade: i.grade,
     defaultOrigin: i.origin,
-    isActive: true,
+    isActive: i.unitVerified,
+    unitVerified: i.unitVerified,
   }));
 }
 
@@ -28,7 +36,7 @@ export async function seedCatalog(repos: Repositories): Promise<{
   items: number;
 }> {
   await repos.catalog.ensureMarket(GARAK_MARKET);
-  const items = catalogFromSample();
+  const items = catalogFromSource();
   const n = await repos.catalog.upsertItems(items);
   return { markets: 1, items: n };
 }

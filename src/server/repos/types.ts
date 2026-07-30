@@ -1,5 +1,5 @@
 import type {
-  CatalogItem,
+  ItemMaster,
   DailyItemPrice,
   IngestRun,
   IngestRunStatus,
@@ -40,9 +40,9 @@ export interface AuctionRepository {
 export interface CatalogRepository {
   ensureMarket(market: Market): Promise<void>;
   listMarkets(): Promise<Market[]>;
-  upsertItems(items: CatalogItem[]): Promise<number>;
-  listItems(): Promise<CatalogItem[]>;
-  findItemByName(name: string): Promise<CatalogItem | null>;
+  upsertItems(items: ItemMaster[]): Promise<number>;
+  listItems(): Promise<ItemMaster[]>;
+  findItemByName(name: string): Promise<ItemMaster | null>;
 }
 
 export interface WaitlistRepository {

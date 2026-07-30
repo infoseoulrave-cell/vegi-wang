@@ -1,4 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
+import { parseUnitKg } from "./unit";
 
 /**
  * 가락시장 경매결과 (서울시농수산식품공사)
@@ -120,18 +121,12 @@ export function aggregateByPummok(rows: GarakRow[]): Map<string, number> {
   return out;
 }
 
-/** UUN(거래단량)에서 kg 추출 — "10kg", "10.01kg" 등 */
-export function parseUnitKg(unit: string): number | null {
-  const m = unit.match(/(\d+(?:\.\d+)?)\s*kg/i);
-  if (!m) return null;
-  const kg = Number(m[1]);
-  return kg > 0 ? kg : null;
-}
-
 /**
  * 품목명별 원/kg 평균.
- * 가락은 10kg·20kg 등 상자 가격이 섞여 있어 단순 평균하면
- * KAMIS 1kg 시계열과 비교 시 수백 % 등락이 난다.
+ *
+ * 가락 응답은 행마다 UUN(거래단량)을 주므로 **행 단위로 자기완결적 환산**이 된다.
+ * 추정이 필요 없다는 점이 KAMIS와 결정적으로 다르고, 그래서 경락가의 유일한 원천이다.
+ * UUN이 중량으로 파싱되지 않는 행(마리/속/단)은 집계에서 제외한다 — 추정하지 않는다.
  */
 export function aggregateByPummokPerKg(rows: GarakRow[]): Map<string, number> {
   const acc = new Map<string, { sum: number; n: number }>();
@@ -187,14 +182,16 @@ async function fetchCorp(
 }
 
 /**
- * 특정 품목의 특정일 평균 경락가(가락 6개 법인 합산).
- * kg 환산 후 catalogWeightKg(거래단위 중량)로 되돌려 반환한다.
+ * 특정 품목의 특정일 평균 경락가를 **원/kg**로 반환한다 (가락 6개 법인 합산).
  * 실패/무데이터 시 null.
+ *
+ * 이 함수는 거래단위 가격으로 되돌리지 않는다. 원/kg가 내부 표준축이고,
+ * 상자가·1개가는 표시 직전에 곱해서 만든다. (예전에는 여기서 catalogWeightKg를
+ * 곱해 되돌렸고, 그 값이 다시 weightKg로 나눠지면서 이중 나눗셈이 발생했다.)
  */
-export async function fetchGarakAuction(
+export async function fetchGarakAuctionPerKg(
   itemName: string,
   dateISO: string,
-  catalogWeightKg = 1,
 ): Promise<number | null> {
   if (!process.env.GARAK_API_ID || !process.env.GARAK_API_PW) return null;
   // s_pummok은 부분매칭이므로 괄호/수식어를 제거한 기본 품목명으로 질의한다.
@@ -207,9 +204,6 @@ export async function fetchGarakAuction(
   // PUMMOK이 질의어와 정확히 일치하는 품목만 채택(예: "사과" 질의 시 "대추(사과대추)" 배제)
   const exact = all.filter((r) => r.pummok === query || r.pummok === itemName);
   const perKgMap = aggregateByPummokPerKg(exact.length ? exact : all);
-  const perKg =
-    perKgMap.get(query) ?? perKgMap.get(itemName) ?? null;
-  if (perKg == null || !(perKg > 0)) return null;
-  const w = catalogWeightKg > 0 ? catalogWeightKg : 1;
-  return Math.round(perKg * w);
+  const perKg = perKgMap.get(query) ?? perKgMap.get(itemName) ?? null;
+  return perKg != null && perKg > 0 ? perKg : null;
 }

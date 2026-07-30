@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import type {
-  CatalogItem,
+  ItemMaster,
   DailyItemPrice,
   IngestRun,
   ItemBaseline,
@@ -41,6 +41,14 @@ export async function closeSql(): Promise<void> {
   }
 }
 
+/**
+ * 원/kg → 거래단위 가격 역산. 원문 호환 컬럼(avg_price 등)을 채우기 위한 것으로,
+ * 서빙은 _per_kg 컬럼만 읽는다. unitKg를 모르면 원/kg를 그대로 둔다.
+ */
+function unitPrice(perKg: number, unitKg: number | null): number {
+  return unitKg && unitKg > 0 ? Math.round(perKg * unitKg) : perKg;
+}
+
 class PgAuctionRepo implements AuctionRepository {
   constructor(private sql: Sql) {}
 
@@ -51,15 +59,18 @@ class PgAuctionRepo implements AuctionRepository {
       await this.sql`
         INSERT INTO raw_auction (
           natural_key, sale_date, market_code, corp_code, corp_name,
-          item_name, item_variety, unit, grade, origin, qty, price, source, payload
+          item_name, item_variety, unit, grade, origin, qty, price,
+          unit_kg, price_per_kg, source, payload
         ) VALUES (
           ${r.naturalKey}, ${r.saleDate}::date, ${r.marketCode}, ${r.corpCode},
           ${r.corpName}, ${r.itemName}, ${r.itemVariety}, ${r.unit}, ${r.grade},
-          ${r.origin}, ${r.qty}, ${r.price}, ${r.source},
+          ${r.origin}, ${r.qty}, ${r.price}, ${r.unitKg}, ${r.pricePerKg}, ${r.source},
           ${r.payload ? this.sql.json(r.payload as never) : null}
         )
         ON CONFLICT (natural_key) DO UPDATE SET
           price = EXCLUDED.price,
+          unit_kg = EXCLUDED.unit_kg,
+          price_per_kg = EXCLUDED.price_per_kg,
           qty = EXCLUDED.qty,
           payload = EXCLUDED.payload,
           ingested_at = NOW()
@@ -72,7 +83,8 @@ class PgAuctionRepo implements AuctionRepository {
   async listRawByDate(marketCode: string, saleDate: string): Promise<RawAuctionRecord[]> {
     const rows = await this.sql`
       SELECT natural_key, sale_date::text, market_code, corp_code, corp_name,
-             item_name, item_variety, unit, grade, origin, qty, price, source
+             item_name, item_variety, unit, grade, origin, qty, price,
+             unit_kg, price_per_kg, source
       FROM raw_auction
       WHERE market_code = ${marketCode} AND sale_date = ${saleDate}::date
     `;
@@ -89,6 +101,8 @@ class PgAuctionRepo implements AuctionRepository {
       origin: r.origin == null ? null : String(r.origin),
       qty: r.qty == null ? null : Number(r.qty),
       price: Number(r.price),
+      unitKg: r.unit_kg == null ? null : Number(r.unit_kg),
+      pricePerKg: r.price_per_kg == null ? null : Number(r.price_per_kg),
       source: r.source as RawAuctionRecord["source"],
     }));
   }
@@ -99,18 +113,32 @@ class PgAuctionRepo implements AuctionRepository {
     for (const r of rows) {
       await this.sql`
         INSERT INTO daily_item_price (
-          sale_date, market_code, item_id, item_name, avg_price, min_price, max_price,
-          volume, trade_count, unit, grade, origin, source
+          sale_date, market_code, item_id, item_name,
+          avg_price, min_price, max_price,
+          avg_price_per_kg, min_price_per_kg, max_price_per_kg, unit_kg,
+          volume, trade_count, unit, grade, origin, source,
+          price_status, as_of_date
         ) VALUES (
           ${r.saleDate}::date, ${r.marketCode}, ${r.itemId}, ${r.itemName},
-          ${r.avgPrice}, ${r.minPrice}, ${r.maxPrice}, ${r.volume}, ${r.tradeCount},
-          ${r.unit}, ${r.grade}, ${r.origin}, ${r.source}
+          ${unitPrice(r.avgPricePerKg, r.unitKg)},
+          ${unitPrice(r.minPricePerKg, r.unitKg)},
+          ${unitPrice(r.maxPricePerKg, r.unitKg)},
+          ${r.avgPricePerKg}, ${r.minPricePerKg}, ${r.maxPricePerKg}, ${r.unitKg},
+          ${r.volume}, ${r.tradeCount},
+          ${r.unit}, ${r.grade}, ${r.origin}, ${r.source},
+          ${r.priceStatus}, ${r.asOfDate}
         )
         ON CONFLICT (sale_date, market_code, item_name) DO UPDATE SET
           item_id = EXCLUDED.item_id,
           avg_price = EXCLUDED.avg_price,
           min_price = EXCLUDED.min_price,
           max_price = EXCLUDED.max_price,
+          avg_price_per_kg = EXCLUDED.avg_price_per_kg,
+          min_price_per_kg = EXCLUDED.min_price_per_kg,
+          max_price_per_kg = EXCLUDED.max_price_per_kg,
+          unit_kg = EXCLUDED.unit_kg,
+          price_status = EXCLUDED.price_status,
+          as_of_date = EXCLUDED.as_of_date,
           volume = EXCLUDED.volume,
           trade_count = EXCLUDED.trade_count,
           unit = EXCLUDED.unit,
@@ -126,8 +154,10 @@ class PgAuctionRepo implements AuctionRepository {
 
   async getDaily(marketCode: string, saleDate: string): Promise<DailyItemPrice[]> {
     const rows = await this.sql`
-      SELECT sale_date::text, market_code, item_id, item_name, avg_price, min_price,
-             max_price, volume, trade_count, unit, grade, origin, source
+      SELECT sale_date::text, market_code, item_id, item_name,
+             avg_price_per_kg, min_price_per_kg, max_price_per_kg, unit_kg,
+             volume, trade_count, unit, grade, origin, source,
+             price_status, as_of_date::text
       FROM daily_item_price
       WHERE market_code = ${marketCode} AND sale_date = ${saleDate}::date
     `;
@@ -158,13 +188,16 @@ class PgAuctionRepo implements AuctionRepository {
     for (const r of rows) {
       await this.sql`
         INSERT INTO item_baseline (
-          item_id, market_code, window_days, as_of_date, avg_price, sample_days
+          item_id, market_code, window_days, as_of_date,
+          avg_price, avg_price_per_kg, sample_days, method
         ) VALUES (
           ${r.itemId}, ${r.marketCode}, ${r.windowDays}, ${r.asOfDate}::date,
-          ${r.avgPrice}, ${r.sampleDays}
+          ${r.avgPricePerKg}, ${r.avgPricePerKg}, ${r.sampleDays}, ${r.method}
         )
         ON CONFLICT (item_id, market_code, window_days, as_of_date) DO UPDATE SET
           avg_price = EXCLUDED.avg_price,
+          avg_price_per_kg = EXCLUDED.avg_price_per_kg,
+          method = EXCLUDED.method,
           sample_days = EXCLUDED.sample_days,
           computed_at = NOW()
       `;
@@ -180,7 +213,7 @@ class PgAuctionRepo implements AuctionRepository {
     windowDays: number,
   ): Promise<ItemBaseline | null> {
     const rows = await this.sql`
-      SELECT item_id, market_code, window_days, as_of_date::text, avg_price, sample_days
+      SELECT item_id, market_code, window_days, as_of_date::text, avg_price_per_kg, sample_days, method
       FROM item_baseline
       WHERE item_id = ${itemId}
         AND market_code = ${marketCode}
@@ -214,15 +247,18 @@ function mapDaily(r: Record<string, unknown>): DailyItemPrice {
     marketCode: String(r.market_code),
     itemId: r.item_id == null ? null : String(r.item_id),
     itemName: String(r.item_name),
-    avgPrice: Number(r.avg_price),
-    minPrice: Number(r.min_price),
-    maxPrice: Number(r.max_price),
+    avgPricePerKg: Number(r.avg_price_per_kg),
+    minPricePerKg: Number(r.min_price_per_kg),
+    maxPricePerKg: Number(r.max_price_per_kg),
+    unitKg: r.unit_kg == null ? null : Number(r.unit_kg),
     volume: r.volume == null ? null : Number(r.volume),
     tradeCount: Number(r.trade_count),
     unit: r.unit == null ? null : String(r.unit),
     grade: r.grade == null ? null : String(r.grade),
     origin: r.origin == null ? null : String(r.origin),
     source: String(r.source),
+    priceStatus: (r.price_status as DailyItemPrice["priceStatus"]) ?? "live",
+    asOfDate: r.as_of_date == null ? null : String(r.as_of_date).slice(0, 10),
   };
 }
 
@@ -232,8 +268,9 @@ function mapBaseline(r: Record<string, unknown>): ItemBaseline {
     marketCode: String(r.market_code),
     windowDays: Number(r.window_days),
     asOfDate: String(r.as_of_date).slice(0, 10),
-    avgPrice: Number(r.avg_price),
+    avgPricePerKg: Number(r.avg_price_per_kg),
     sampleDays: Number(r.sample_days),
+    method: (r.method as ItemBaseline["method"]) ?? "moving_avg_30",
   };
 }
 
@@ -263,15 +300,16 @@ class PgCatalogRepo implements CatalogRepository {
     }));
   }
 
-  async upsertItems(items: CatalogItem[]): Promise<number> {
+  async upsertItems(items: ItemMaster[]): Promise<number> {
     let n = 0;
     for (const i of items) {
       await this.sql`
         INSERT INTO items (
-          id, name, category, auction_unit, weight_kg, default_grade, default_origin, is_active
+          id, name, category, auction_unit, weight_kg, default_grade, default_origin,
+          is_active, unit_verified
         ) VALUES (
           ${i.id}, ${i.name}, ${i.category}, ${i.auctionUnit}, ${i.weightKg},
-          ${i.defaultGrade}, ${i.defaultOrigin}, ${i.isActive}
+          ${i.defaultGrade}, ${i.defaultOrigin}, ${i.isActive}, ${i.unitVerified}
         )
         ON CONFLICT (id) DO UPDATE SET
           name = EXCLUDED.name,
@@ -281,6 +319,7 @@ class PgCatalogRepo implements CatalogRepository {
           default_grade = EXCLUDED.default_grade,
           default_origin = EXCLUDED.default_origin,
           is_active = EXCLUDED.is_active,
+          unit_verified = EXCLUDED.unit_verified,
           updated_at = NOW()
       `;
       n += 1;
@@ -288,9 +327,10 @@ class PgCatalogRepo implements CatalogRepository {
     return n;
   }
 
-  async listItems(): Promise<CatalogItem[]> {
+  async listItems(): Promise<ItemMaster[]> {
     const rows = await this.sql`
-      SELECT id, name, category, auction_unit, weight_kg, default_grade, default_origin, is_active
+      SELECT id, name, category, auction_unit, weight_kg, default_grade, default_origin,
+             is_active, unit_verified
       FROM items WHERE is_active = TRUE
     `;
     return rows.map((r) => ({
@@ -302,10 +342,11 @@ class PgCatalogRepo implements CatalogRepository {
       defaultGrade: r.default_grade == null ? null : String(r.default_grade),
       defaultOrigin: r.default_origin == null ? null : String(r.default_origin),
       isActive: Boolean(r.is_active),
+      unitVerified: Boolean(r.unit_verified),
     }));
   }
 
-  async findItemByName(name: string): Promise<CatalogItem | null> {
+  async findItemByName(name: string): Promise<ItemMaster | null> {
     const items = await this.listItems();
     const exact = items.find((i) => i.name === name);
     if (exact) return exact;

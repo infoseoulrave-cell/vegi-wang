@@ -7,7 +7,13 @@ import { CompassBadge, RetailGapBadge } from "@/components/CompassBadge";
 import { PriceSparkline } from "@/components/PriceSparkline";
 import { categoryHref } from "@/lib/categories";
 import { COMPASS_META } from "@/lib/compass";
-import { signedPct, won } from "@/lib/format";
+import {
+  baselineLabel,
+  multiple,
+  priceStatusLabel,
+  signedPct,
+  won,
+} from "@/lib/format";
 import type { PriceItemWithSignal, ProduceCategory } from "@/lib/types";
 
 const TABS: Array<{ key: ProduceCategory | "전체"; label: string }> = [
@@ -125,6 +131,11 @@ export function PriceBoard({
               <div className="mt-4">
                 <p className="text-[11px] font-semibold text-brand-dark">
                   {item.consumerUnit} 도매가 (가락 경락가 기준)
+                  {priceStatusLabel(item.priceStatus, item.asOfDate) && (
+                    <span className="ml-1.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                      {priceStatusLabel(item.priceStatus, item.asOfDate)}
+                    </span>
+                  )}
                 </p>
                 <div className="flex items-end justify-between">
                   <p className="text-2xl font-extrabold tracking-tight">
@@ -143,29 +154,44 @@ export function PriceBoard({
                   </p>
                 </div>
                 <p className="mt-0.5 text-xs text-foreground/50">
-                  실제 경매 {item.auctionUnit} {won(item.auctionPrice)} · 최근평균比{" "}
-                  <span className="font-semibold text-foreground/70">
-                    {signedPct(item.deviationRate)}
-                  </span>
+                  실제 경매 {item.auctionUnit} {won(item.auctionUnitPrice)}
+                  {baselineLabel(item.baselineMethod) && (
+                    <>
+                      {" · "}
+                      {baselineLabel(item.baselineMethod)}比{" "}
+                      <span className="font-semibold text-foreground/70">
+                        {signedPct(item.deviationRate)}
+                      </span>
+                    </>
+                  )}
                 </p>
               </div>
 
               <div className="mt-3 rounded-xl bg-background/60 p-3 ring-1 ring-black/5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-foreground/60">
-                    소매 {item.consumerUnit} 약 {won(item.consumerRetailPrice)}
+                    {item.consumerRetailPrice != null
+                      ? `소매 ${item.consumerUnit} 약 ${won(item.consumerRetailPrice)}`
+                      : "소매가 미확인"}
                   </span>
                   <RetailGapBadge level={item.retailGap} />
                 </div>
-                <p className="mt-1 text-sm">
-                  <span className="font-bold text-brand-dark">
-                    소매의 {item.retailMultiple}배
-                  </span>
-                  <span className="text-foreground/60">
-                    {" "}
-                    · {item.consumerUnit}당 {won(item.savingPerUnit)} 절약
-                  </span>
-                </p>
+                {/* 소매가가 없으면 배수·절약액을 지어내지 않는다 */}
+                {item.retailMultiple != null ? (
+                  <p className="mt-1 text-sm">
+                    <span className="font-bold text-brand-dark">
+                      소매의 {multiple(item.retailMultiple)}
+                    </span>
+                    <span className="text-foreground/60">
+                      {" "}
+                      · {item.consumerUnit}당 {won(item.savingPerUnit)} 절약
+                    </span>
+                  </p>
+                ) : (
+                  <p className="mt-1 text-sm text-foreground/45">
+                    소매 조사가가 없어 유통 거품을 계산하지 않았습니다
+                  </p>
+                )}
               </div>
 
               <p className="mt-3 text-xs leading-relaxed text-foreground/60">

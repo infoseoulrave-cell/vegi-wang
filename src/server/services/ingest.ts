@@ -8,7 +8,8 @@ import {
   parseGarakJson,
   type GarakRow,
 } from "@/lib/sources/garak";
-import { SAMPLE_ITEMS } from "@/lib/sample-data";
+import { parseUnitKg } from "@/lib/sources/unit";
+import { CATALOG_ITEMS } from "@/lib/catalog";
 import { getEnv, preferredAuctionSource } from "@/server/config/env";
 import { todayKST } from "@/server/domain/date";
 import {
@@ -25,6 +26,21 @@ const AT_ENDPOINT =
   "http://apis.data.go.kr/B552895/openapi/service/MallRltmInfoService/getMallRltmInfo";
 const GARAK_JSON =
   "http://www.garak.co.kr/homepage/publicdata/dataJsonOpen.do";
+
+/**
+ * 거래단량 문자열에서 원/kg를 파생한다.
+ * 환산할 수 없으면 null — 집계에서 제외되지, 1kg으로 가정되지 않는다.
+ */
+function derivePerKg(
+  price: number,
+  unit: string | null,
+): { unitKg: number | null; pricePerKg: number | null } {
+  const unitKg = unit ? parseUnitKg(unit) : null;
+  if (unitKg == null || !(unitKg > 0) || !(price > 0)) {
+    return { unitKg, pricePerKg: null };
+  }
+  return { unitKg, pricePerKg: Math.round(price / unitKg) };
+}
 
 function atToRaw(
   rows: AtAuctionRow[],
@@ -55,6 +71,7 @@ function atToRaw(
       origin: r.origin || null,
       qty: null,
       price: r.price,
+      ...derivePerKg(r.price, r.unit || null),
       source: "at" as const,
       payload: { ...r },
     };
@@ -90,6 +107,7 @@ function garakToRaw(
       origin: r.origin || null,
       qty: null,
       price: r.price,
+      ...derivePerKg(r.price, r.unit || null),
       source: "garak" as const,
       payload: { ...r },
     };
@@ -168,7 +186,7 @@ async function collectRaw(
 
   if (preferred === "garak" || preferred === "at") {
     if (getEnv().garak.id) {
-      const names = SAMPLE_ITEMS.map((i) => i.name);
+      const names = CATALOG_ITEMS.map((i) => i.name);
       const batches = await Promise.all(
         names.map((n) => fetchGarakRowsForItem(n, saleDate)),
       );

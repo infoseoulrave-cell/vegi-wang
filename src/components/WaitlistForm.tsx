@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-import { SAMPLE_ITEMS } from "@/lib/sample-data";
+import { CATALOG_ITEMS } from "@/lib/catalog";
 
 const CATEGORIES = ["채소", "과일", "수산", "전체"] as const;
 
@@ -18,8 +18,8 @@ export function WaitlistForm() {
   const itemChoices = useMemo(() => {
     const list =
       category === "전체"
-        ? SAMPLE_ITEMS
-        : SAMPLE_ITEMS.filter((i) => i.category === category);
+        ? CATALOG_ITEMS
+        : CATALOG_ITEMS.filter((i) => i.category === category);
     return list.slice(0, 18);
   }, [category]);
 
@@ -33,7 +33,7 @@ export function WaitlistForm() {
     e.preventDefault();
     setStatus("loading");
     setMessage("");
-    const names = SAMPLE_ITEMS.filter((i) => itemIds.includes(i.id)).map(
+    const names = CATALOG_ITEMS.filter((i) => itemIds.includes(i.id)).map(
       (i) => i.name,
     );
     const interest =

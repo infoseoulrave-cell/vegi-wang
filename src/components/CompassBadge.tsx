@@ -13,7 +13,9 @@ export function CompassBadge({ level }: { level: CompassLevel }) {
   );
 }
 
-export function RetailGapBadge({ level }: { level: RetailGapLevel }) {
+/** 소매가가 없으면 거품 판정 근거가 없다 — 배지를 아예 그리지 않는다 */
+export function RetailGapBadge({ level }: { level?: RetailGapLevel }) {
+  if (!level) return null;
   const meta = RETAIL_GAP_META[level];
   return (
     <span

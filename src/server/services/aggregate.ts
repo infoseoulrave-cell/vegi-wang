@@ -6,15 +6,28 @@ import type {
 } from "@/server/domain/models";
 import type { Repositories } from "@/server/repos/types";
 
-/** 원천 행 → 품목명별 일별 집계 (순수) */
+/**
+ * 자체 이동평균 기준선으로 전환하기 위한 최소 표본 일수.
+ * 이보다 적으면 이동평균인 척하지 않고 부트스트랩 단계임을 명시한다.
+ */
+export const MIN_BASELINE_SAMPLE_DAYS = 14;
+
+/**
+ * 원천 행 → 품목명별 일별 집계 (순수). **원/kg 축으로만 집계한다.**
+ *
+ * 가락 응답은 10kg·20kg 상자가가 섞여 오므로 원문 price를 그대로 평균내면
+ * 단위가 뒤섞인 무의미한 값이 나온다. pricePerKg가 없는 행(거래단량을
+ * 중량으로 환산할 수 없는 행)은 집계에서 제외한다 — 추정하지 않는다.
+ */
 export function aggregateRawToDaily(
   rows: RawAuctionRecord[],
   itemIdByName: Map<string, string>,
 ): DailyItemPrice[] {
   type Acc = {
-    prices: number[];
+    pricesPerKg: number[];
     volume: number;
     unit: string | null;
+    unitKg: number | null;
     grade: string | null;
     origin: string | null;
     source: string;
@@ -25,11 +38,13 @@ export function aggregateRawToDaily(
   const map = new Map<string, Acc>();
 
   for (const r of rows) {
+    if (r.pricePerKg == null || !(r.pricePerKg > 0)) continue;
     const key = `${r.saleDate}|${r.marketCode}|${r.itemName}`;
     const cur = map.get(key) ?? {
-      prices: [],
+      pricesPerKg: [],
       volume: 0,
       unit: r.unit,
+      unitKg: r.unitKg,
       grade: r.grade,
       origin: r.origin,
       source: r.source,
@@ -37,9 +52,10 @@ export function aggregateRawToDaily(
       saleDate: r.saleDate,
       itemName: r.itemName,
     };
-    cur.prices.push(r.price);
+    cur.pricesPerKg.push(r.pricePerKg);
     if (r.qty != null) cur.volume += r.qty;
     if (!cur.unit && r.unit) cur.unit = r.unit;
+    if (cur.unitKg == null && r.unitKg != null) cur.unitKg = r.unitKg;
     if (!cur.grade && r.grade) cur.grade = r.grade;
     if (!cur.origin && r.origin) cur.origin = r.origin;
     map.set(key, cur);
@@ -48,28 +64,37 @@ export function aggregateRawToDaily(
   const out: DailyItemPrice[] = [];
   for (const acc of map.values()) {
     const avg = Math.round(
-      acc.prices.reduce((a, b) => a + b, 0) / acc.prices.length,
+      acc.pricesPerKg.reduce((a, b) => a + b, 0) / acc.pricesPerKg.length,
     );
     out.push({
       saleDate: acc.saleDate,
       marketCode: acc.marketCode,
       itemId: itemIdByName.get(acc.itemName) ?? null,
       itemName: acc.itemName,
-      avgPrice: avg,
-      minPrice: Math.min(...acc.prices),
-      maxPrice: Math.max(...acc.prices),
+      avgPricePerKg: avg,
+      minPricePerKg: Math.min(...acc.pricesPerKg),
+      maxPricePerKg: Math.max(...acc.pricesPerKg),
       volume: acc.volume || null,
-      tradeCount: acc.prices.length,
+      tradeCount: acc.pricesPerKg.length,
       unit: acc.unit,
+      unitKg: acc.unitKg,
       grade: acc.grade,
       origin: acc.origin,
       source: acc.source,
+      priceStatus: "live",
+      asOfDate: null,
     });
   }
   return out;
 }
 
-/** 최근 windowDays 일평균 기준가 계산 (순수) */
+/**
+ * 최근 windowDays 일평균 기준가 계산 (순수) — 원/kg.
+ *
+ * 표본이 MIN_BASELINE_SAMPLE_DAYS 미만이면 null을 반환한다.
+ * 이틀치 평균을 "30일 이동평균"이라고 부르지 않기 위해서다.
+ * 그 구간에서는 KAMIS 평년가(dpr7)가 부트스트랩 기준선을 맡는다.
+ */
 export function computeBaselines(input: {
   itemId: string;
   marketCode: string;
@@ -81,17 +106,18 @@ export function computeBaselines(input: {
   const inWindow = input.dailyRows.filter(
     (d) => d.saleDate >= from && d.saleDate <= input.asOfDate,
   );
-  if (!inWindow.length) return null;
+  if (inWindow.length < MIN_BASELINE_SAMPLE_DAYS) return null;
   const avg = Math.round(
-    inWindow.reduce((s, d) => s + d.avgPrice, 0) / inWindow.length,
+    inWindow.reduce((s, d) => s + d.avgPricePerKg, 0) / inWindow.length,
   );
   return {
     itemId: input.itemId,
     marketCode: input.marketCode,
     windowDays: input.windowDays,
     asOfDate: input.asOfDate,
-    avgPrice: avg,
+    avgPricePerKg: avg,
     sampleDays: inWindow.length,
+    method: "moving_avg_30",
   };
 }
 

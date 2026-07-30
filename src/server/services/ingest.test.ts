@@ -40,6 +40,8 @@ describe("morning ingest + serve (memory)", () => {
         origin: "강원 평창",
         qty: 12,
         price: 9500,
+        unitKg: 10,
+        pricePerKg: 950,
         source: "garak" as const,
       },
       {
@@ -64,6 +66,8 @@ describe("morning ingest + serve (memory)", () => {
         origin: "강원 평창",
         qty: 8,
         price: 10500,
+        unitKg: 10,
+        pricePerKg: 1050,
         source: "garak" as const,
       },
     ];
@@ -80,7 +84,7 @@ describe("morning ingest + serve (memory)", () => {
 
     const daily = await repos.auction.getDaily("110001", saleDate);
     const cabbage = daily.find((d) => d.itemName === "배추");
-    expect(cabbage?.avgPrice).toBe(10000);
+    expect(cabbage?.avgPricePerKg).toBe(1000);
     expect(cabbage?.itemId).toBe("cabbage");
 
     // 멱등: 동일 raw 재수집해도 성공
@@ -94,7 +98,8 @@ describe("morning ingest + serve (memory)", () => {
     const feed = await getServedPriceFeed(repos, saleDate);
     expect(feed.storage).toBe("db");
     const item = feed.items.find((i) => i.id === "cabbage");
-    expect(item?.auctionPrice).toBe(10000);
+    expect(item?.auctionPerKg).toBe(1000);
+    expect(item?.auctionUnitPrice).toBe(10000);
     expect(item?.compass).toBeDefined();
   });
 
