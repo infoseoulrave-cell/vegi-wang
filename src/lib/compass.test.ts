@@ -183,6 +183,23 @@ describe("withSignal (최근 동향 포지션)", () => {
     expect(produce.retailGap).toBe("bubble");
   });
 
+  /**
+   * 이월 회귀 방지.
+   * 이월값의 직전 값을 전일로 비교하면 "오늘 시세가 안 움직였다"가 되는데,
+   * 사실은 오늘 값을 모르는 것이다. 프로덕션에서 43종 전부 "전일 0%"가
+   * 찍히고 있었다.
+   */
+  it("이월 상태면 등락률을 만들지 않는다", () => {
+    const s = withSignal({
+      ...cabbage,
+      priceStatus: "carried",
+      asOfDate: "2026-07-31",
+      auctionPrevPerKg: undefined,
+    });
+    expect(s.changeRate).toBeUndefined();
+    expect(s.priceStatus).toBe("carried");
+  });
+
   it("이월 상태와 기준일을 그대로 전달한다", () => {
     const s = withSignal({
       ...cabbage,

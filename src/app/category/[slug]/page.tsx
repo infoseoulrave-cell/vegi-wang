@@ -89,7 +89,7 @@ export default async function CategoryPage({
             </p>
             <p className="mt-3 text-xs font-medium text-white/65">
               {feed.date} 기준 · {items.length}개 품목
-              {feed.auctionSource === "live" || feed.retailSource === "live"
+              {feed.auctionSource !== "none" || feed.retailSource === "live"
                 ? " · 라이브 시세"
                 : ""}
             </p>

@@ -206,6 +206,7 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
   ]);
 
   let auctionLive = false;
+  let auctionCarried = false;
   let retailLive = false;
   const rejected: { name: string; reason: string }[] = [];
   const items: PriceItem[] = [];
@@ -297,6 +298,7 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
     }
 
     if (resolved.status === "live") auctionLive = true;
+    else if (resolved.status === "carried") auctionCarried = true;
     if (k?.retailPerKg) retailLive = true;
 
     /*
@@ -330,8 +332,15 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
     items.push({
       ...base,
       auctionPerKg: resolved.perKg,
-      // 등락률은 두 값의 차이를 주장하므로 원천이 같을 때만 만든다
-      auctionPrevPerKg: prevFromSeries(carrySeries, todayISO),
+      /*
+       * 등락률은 두 값의 차이를 주장하므로 원천이 같을 때만 만든다.
+       * 이월(carried)일 때는 아예 만들지 않는다 — 이월값의 직전 값을 비교하면
+       * "오늘 시세가 안 움직였다"가 되는데, 사실은 오늘 값을 모르는 것이다.
+       */
+      auctionPrevPerKg:
+        resolved.status === "carried"
+          ? undefined
+          : prevFromSeries(carrySeries, todayISO),
       trendPerKg: useKamisTrend ? kamisToday! : undefined,
       trendSource: useKamisTrend ? "kamis" : priceSource,
       /*
@@ -358,8 +367,8 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
   return {
     date: todayISO,
     market: buildMarketLabel(items),
-    auctionSource: auctionLive ? "live" : "sample",
-    retailSource: retailLive ? "live" : "sample",
+    auctionSource: auctionLive ? "live" : auctionCarried ? "carried" : "none",
+    retailSource: retailLive ? "live" : "none",
     items: items.map(withSignal),
     rejected: rejected.length ? rejected : undefined,
   };

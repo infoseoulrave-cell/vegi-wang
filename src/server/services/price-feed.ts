@@ -41,14 +41,33 @@ export async function getServedPriceFeed(
   const marketCode = getEnv().defaultMarketCode;
   const windowDays = getEnv().baselineWindowDays;
 
-  await seedCatalog(repos);
+  /*
+   * DB가 붙지 않으면 실시간 경로로 물러난다.
+   *
+   * 예전에는 seedCatalog가 던지면 그대로 위로 전파돼 페이지 프리렌더가
+   * 통째로 실패했다. DATABASE_URL이 설정돼 있는데 값이 틀리면(비밀번호 오타,
+   * 네트워크 차단) **배포 전체가 깨진다.** DB는 이력을 쌓는 수단이지
+   * 서비스 가용성의 전제가 아니므로, 실패하면 조용히 실시간 경로를 쓴다.
+   */
+  let daily: DailyItemPrice[];
+  try {
+    await seedCatalog(repos);
 
-  // 청과(가락)와 수산(위판장)은 시장 코드가 다르다 — 둘 다 읽는다.
-  const [garakDaily, fishDaily] = await Promise.all([
-    repos.auction.getDaily(marketCode, saleDate),
-    repos.auction.getDaily(FISH_MARKET.code, saleDate),
-  ]);
-  const daily = [...garakDaily, ...fishDaily];
+    // 청과(가락)와 수산(위판장)은 시장 코드가 다르다 — 둘 다 읽는다.
+    const [garakDaily, fishDaily] = await Promise.all([
+      repos.auction.getDaily(marketCode, saleDate),
+      repos.auction.getDaily(FISH_MARKET.code, saleDate),
+    ]);
+    daily = [...garakDaily, ...fishDaily];
+  } catch (err) {
+    console.error(
+      "[price-feed] DB 접근 실패 — 실시간 경로로 폴백",
+      err instanceof Error ? err.message : err,
+    );
+    const live = await getLivePriceFeed(saleDate);
+    return { ...live, storage: "live" };
+  }
+
   if (!daily.length) {
     const live = await getLivePriceFeed(saleDate);
     return { ...live, storage: "live" };
@@ -134,7 +153,8 @@ export async function getServedPriceFeed(
     built.push({
       ...base,
       auctionPerKg: resolved.perKg,
-      auctionPrevPerKg: prev?.price,
+      // 이월이면 등락률을 만들지 않는다 (위 prices.ts와 동일 규칙)
+      auctionPrevPerKg: resolved.status === "carried" ? undefined : prev?.price,
       auctionBaselinePerKg: baselinePerKg,
       baselineMethod,
       retailPerKg: k?.retailPerKg,
@@ -155,8 +175,12 @@ export async function getServedPriceFeed(
   return {
     date: saleDate,
     market: buildMarketLabel(built),
-    auctionSource: "live",
-    retailSource: retailLive ? "live" : "sample",
+    auctionSource: built.some((i) => i.priceStatus === "live")
+      ? "live"
+      : built.length
+        ? "carried"
+        : "none",
+    retailSource: retailLive ? "live" : "none",
     items: built.map(withSignal),
     storage: "db",
   };

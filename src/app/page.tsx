@@ -25,8 +25,11 @@ export default async function Home() {
   const pickGroups = buildTodayPickGroups(feed.items);
   const savingsBasket = buildSavingsBasket(feed.items);
   const bestSaving = savingsBasket[0];
-  const isSample =
-    feed.auctionSource === "sample" || feed.retailSource === "sample";
+  /*
+   * 전량 이월 상태 — 도매시장 정산 전이거나 휴장일이다.
+   * 실제 데이터이므로 "샘플"이라고 하면 거짓말이 된다.
+   */
+  const isCarried = feed.auctionSource === "carried";
 
   return (
     <main className="w-full">
@@ -162,9 +165,9 @@ export default async function Home() {
           <h2 className="text-2xl font-bold">경매가 · 최근 동향 그래프</h2>
           <p className="mt-1 text-sm text-foreground/50">
             {feed.market} · 1개 기준 · 그래프는 최근 도매 시세 포지션
-            {isSample && (
-              <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
-                일부 샘플 데이터
+            {isCarried && (
+              <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                직전 영업일 경락가 기준
               </span>
             )}
           </p>

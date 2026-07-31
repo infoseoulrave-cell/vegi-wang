@@ -219,7 +219,18 @@ export interface PriceItemWithSignal extends PriceItem {
   recommendation: string;
 }
 
-export type FeedSource = "live" | "sample";
+/**
+ * 피드 전체의 신선도.
+ *
+ * 예전에는 "live" | "sample" 둘뿐이었다. 하드코딩 더미를 전부 제거한 뒤에도
+ * 이 타입이 남아, 오늘 값이 없어 이월했을 때 "sample"로 떨어졌다 —
+ * 실제 데이터인데 화면에 "일부 샘플 데이터"라고 표시됐다.
+ *
+ * - live    : 기준일 당일 실측이 하나라도 있음
+ * - carried : 전부 이월 (도매시장 휴장·정산 전). 실제 데이터다
+ * - none    : 표시할 값이 없음
+ */
+export type FeedSource = "live" | "carried" | "none";
 
 export interface PriceFeed {
   /** 경매 기준일 (YYYY-MM-DD) */
