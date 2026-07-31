@@ -10,7 +10,8 @@
 
 | 소스 | 역할 | 축 특성 |
 |---|---|---|
-| 가락 경매결과 | **청과 경락가 원천** | 행마다 `UUN`(거래단량)을 주므로 자기완결적 환산. 추정 불필요 |
+| aT 전국 도매시장 | **청과 경락가 1순위** | 전국 32개 시장 + 거래량 → 물량 가중평균. ⚠ 필드명 미확정 |
+| 가락 경매결과 | 청과 2순위 · 교차검증 | 행마다 `UUN`(거래단량)을 주므로 자기완결적 환산 |
 | 해수부 위판장 | **수산 경락가 원천** | `csmtAmount ÷ csmtWt` → 원/kg. 단위 문자열 파싱조차 불필요 |
 | KAMIS 도매 | 청과 교차검증 + 부트스트랩 기준선 | ⚠ 슬롯마다 축이 다르다 (아래). 수산에는 쓰지 않는다 |
 | KAMIS 소매 | 소매가 (오프라인 조사 표본) | 단위가 개수 기반이면 카탈로그 검증 중량 필요 |
@@ -36,6 +37,7 @@ dpr5(1개월전)·dpr6(1년전)·dpr7(평년)과 개수 기반 단위("1포기",
 ### 진단
 
 - `GET /api/debug/price-axis` — 품목별 소스별 원/kg를 나란히 덤프. 축이 어긋나면 여기서 먼저 보인다.
+- `GET /api/debug/at-market` — aT 필드명·축 확정용 진단 (아래 참고)
 - `GET /api/debug/fish-market` — 위판장 축 확정용 진단 (아래 참고)
 - `GET /api/health` — 스토리지·자격증명·최근 수집(`lastIngest`)·카탈로그 검증 현황
 - `npm run catalog:verify` — KAMIS 실응답 단위와 대조 → `docs/CATALOG_VERIFICATION.md`
@@ -166,6 +168,7 @@ curl -s -H "Authorization: Bearer dev" localhost:3000/api/cron/ingest
 | 파일 | 역할 | 축 관련 주의 |
 |---|---|---|
 | `src/lib/sources/unit.ts` | 단위 문자열 파싱 (`parseUnitKg`, `unitTotalKg`) | **나눗셈의 근거를 만드는 유일한 곳** |
+| `src/lib/sources/atMarket.ts` | aT → 원/kg (단위 파싱 + 물량 가중) | 필드명 후보 목록. 진단으로 확정 |
 | `src/lib/sources/garak.ts` | `fetchGarakAuctionPerKg` → 원/kg | 거래단위로 되돌리지 않는다 |
 | `src/lib/sources/fishMarket.ts` | 위판장 → 원/kg (금액÷중량) | 원문 단가(`csmtUntpc`)를 대표값으로 쓰지 않는다 |
 | `src/lib/sources/kamis.ts` | `resolveKamisPerKg` 슬롯별 축 해석 | 위 축 규칙 참고 |
@@ -173,6 +176,32 @@ curl -s -H "Authorization: Bearer dev" localhost:3000/api/cron/ingest
 | `src/lib/prices.ts` | `resolveAuctionPerKg`(축 게이트), 이월 로직 | 10배 이상 벌어지면 둘 다 거부 |
 | `src/lib/compass.ts` | `withSignal` — 신호 계산 | **나눗셈 금지.** 곱해서만 파생한다 |
 | `src/server/services/aggregate.ts` | raw → daily → baseline | 원/kg로 집계, 환산 불가 행은 제외 |
+
+## aT 전국 공영도매시장 (15141808)
+
+청과 경락가의 1순위 원천. 가락 개별 API와 달리 **한 번 호출로 시장 전체**를
+주고 거래량이 있어 물량 가중평균이 가능하다.
+
+| 항목 | 값 |
+|---|---|
+| 엔드포인트 | `apis.data.go.kr/B552895/openapi/service/MallRltmInfoService/getMallRltmInfo` |
+| 인증 | `DATA_GO_KR_SERVICE_KEY` (위판장과 같은 키) |
+| 파라미터 | `serviceKey`, `pageNo`, `numOfRows`, `saleDate`(YYYY-MM-DD), `whsalCd`, `type=json` |
+| 축 | 경락가 ÷ `parseUnitKg(규격/단위)`, 거래량 가중평균 |
+| 조회 범위 | 현재 가락(`110001`)만. 32개 시장 확대는 별도 제품 결정 |
+
+**⚠ 필드명 미확정** — 15141808의 응답 스키마는 명세서가 **xlsx 첨부**로만
+제공되어 웹에서 확인할 수 없었다. `AT_FIELD_CANDIDATES`는 두 곳의 실제
+문서에서 온 후보 목록이다.
+
+1. 농림축산식품 포털의 동일 성격 데이터: `COST`(경락가) · `QTY`(물량) ·
+   `STD`(규격·단위) · `SMALLNAME`/`MIDNAME`/`LARGENAME` · `SANNAME` · `WHSALCD`
+2. 15141808 페이지가 명시한 표준코드 필드: `whsl_mrkt_cd` · `corp_cd` ·
+   `unit_cd` · `gds_sclsf_cd` · `grd_cd` · `plor_cd`
+
+매칭 실패는 **행이 버려질 뿐** 틀린 값이 나가지 않는다.
+키가 붙으면 `GET /api/debug/at-market`이 원시 키와 매칭 결과를 내려주므로,
+그것으로 후보 목록을 실제 키로 좁히고 이 절의 "미확정"을 지운다.
 
 ## 수산 위판장 (해수부 15056856)
 
@@ -203,6 +232,7 @@ curl -s -H "Authorization: Bearer dev" localhost:3000/api/cron/ingest
 - [ ] `DATABASE_URL` / `CRON_SECRET` 설정 → `npm run db:migrate` → Cron 실가동
 - [ ] 자체 이력 14일 축적 후 기준선이 `moving_avg_30`으로 자동 전환되는지 확인
 - [ ] 축 정상화 후 거품 임계값(1.8 / 2.5) 실측 분포로 재조정
-- [ ] `DATA_GO_KR_SERVICE_KEY` 발급 → `/api/debug/fish-market`으로 위판장 축 3종 확정
+- [ ] `DATA_GO_KR_SERVICE_KEY` 발급 → `/api/debug/at-market`으로 aT 필드명 확정
+- [ ] 같은 키로 `/api/debug/fish-market`에서 위판장 축 3종 확정
 - [ ] 위판 표준코드명 확인 후 `FISH_ALIASES`(scripts/verify-catalog.mjs) 정정
 - [ ] 미검증 3품목: 수박(가락 UUN으로 실중량 확인), 아보카도·수입조기(국내 원천 부재)

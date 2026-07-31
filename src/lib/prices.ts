@@ -6,6 +6,7 @@ import {
   sourceMarketFor,
 } from "./catalog";
 import { withSignal } from "./compass";
+import { fetchAtAuctionPerKg, GARAK_WHSAL_CD } from "./sources/atMarket";
 import {
   fetchFishMarketPerKg,
   type FishSpeciesPrice,
@@ -50,31 +51,45 @@ export interface AxisResolution {
 }
 
 /**
- * 경락가 원/kg를 확정한다.
+ * 청과 경락가 원/kg를 확정한다.
  *
- * 가락이 우선이다 — 행마다 UUN을 주므로 자기완결적 환산이 되고 추정이 없다.
- * KAMIS 도매는 슬롯마다 축이 달라 주 원천으로 쓸 수 없고, 교차검증과
- * 가락 결측 시 부트스트랩에만 쓴다.
+ * 우선순위: **aT → 가락 → KAMIS**.
+ *   aT(15141808)는 전국 32개 도매시장을 한 번에 주고 거래량까지 있어
+ *   물량 가중평균이 가능하다. 가락 개별 API보다 신뢰도가 높다.
+ *   가락은 aT 결측 시 대체이자 교차검증 상대다.
+ *   KAMIS 도매는 슬롯마다 축이 달라 주 원천이 될 수 없다 — 최후 폴백.
+ *
+ * 채택값과 **가장 크게 어긋난 다른 값**의 비율이 한계를 넘으면 전부 버린다.
+ * 축이 어긋났다는 신호이지 어느 쪽을 고를 문제가 아니다.
  */
 export function resolveAuctionPerKg(
   garakPerKg: number | null | undefined,
   kamisPerKg: number | null | undefined,
+  atPerKg?: number | null,
 ): AxisResolution {
-  const g = garakPerKg != null && garakPerKg > 0 ? garakPerKg : null;
-  const k = kamisPerKg != null && kamisPerKg > 0 ? kamisPerKg : null;
+  const pos = (v: number | null | undefined) => (v != null && v > 0 ? v : null);
+  const at = pos(atPerKg);
+  const g = pos(garakPerKg);
+  const k = pos(kamisPerKg);
 
-  if (g == null && k == null) return { perKg: null, rejected: null };
-  if (g == null) return { perKg: k, rejected: null };
-  if (k == null) return { perKg: g, rejected: null };
+  const chosen = at ?? g ?? k;
+  if (chosen == null) return { perKg: null, rejected: null };
 
-  const ratio = g > k ? g / k : k / g;
-  if (ratio >= AXIS_DIVERGENCE_LIMIT) {
-    return {
-      perKg: null,
-      rejected: `축 불일치 — 가락 ${g}원/kg vs KAMIS ${k}원/kg (${ratio.toFixed(1)}배)`,
-    };
+  const others: Array<[string, number]> = [];
+  if (at != null && at !== chosen) others.push(["aT", at]);
+  if (g != null && g !== chosen) others.push(["가락", g]);
+  if (k != null && k !== chosen) others.push(["KAMIS", k]);
+
+  for (const [label, v] of others) {
+    const ratio = chosen > v ? chosen / v : v / chosen;
+    if (ratio >= AXIS_DIVERGENCE_LIMIT) {
+      return {
+        perKg: null,
+        rejected: `축 불일치 — 채택 ${chosen}원/kg vs ${label} ${v}원/kg (${ratio.toFixed(1)}배)`,
+      };
+    }
   }
-  return { perKg: g, rejected: null };
+  return { perKg: chosen, rejected: null };
 }
 
 /**
@@ -172,7 +187,9 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
   //   수산 → 해수부 위판장  (금액÷중량으로 원/kg 직접 산출)
   const garakTargets = catalog.filter((i) => sourceMarketFor(i) === "garak");
 
-  const [garakMap, fishMap, kamis] = await Promise.all([
+  const [atMap, garakMap, fishMap, kamis] = await Promise.all([
+    // aT는 한 번 호출로 시장 전체를 준다 — 품목별 반복 호출이 필요 없다
+    fetchAtAuctionPerKg(todayISO, GARAK_WHSAL_CD),
     fetchGarakPerKgMap(garakTargets, todayISO),
     fetchFishMarketPerKg(todayISO),
     fetchKamisPrices(
@@ -218,9 +235,11 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
       todayPerKg = fish && !fish.rejected ? fish.perKg : null;
       axisError = fish?.rejected ?? null;
     } else {
+      const at = lookupBySourceName(atMap, base);
       ({ perKg: todayPerKg, rejected: axisError } = resolveAuctionPerKg(
         garakMap.get(base.id),
         kamisToday,
+        at?.perKg ?? null,
       ));
     }
 

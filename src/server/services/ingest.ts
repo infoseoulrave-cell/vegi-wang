@@ -1,4 +1,5 @@
 import {
+  atRowPerKg,
   GARAK_WHSAL_CD,
   parseAtItems,
   type AtAuctionRow,
@@ -75,15 +76,17 @@ function atToRaw(
       saleDate,
       marketCode,
       corpCode: null,
-      corpName: null,
+      corpName: r.marketName || null,
       itemName: r.itemName,
       itemVariety: null,
       unit: r.unit || null,
       grade: r.grade || null,
       origin: r.origin || null,
-      qty: null,
+      qty: r.qty || null,
       price: r.price,
-      ...derivePerKg(r.price, r.unit || null),
+      // 축은 어댑터가 정한다 — 여기서 다시 계산하지 않는다
+      unitKg: parseUnitKg(r.unit || ""),
+      pricePerKg: atRowPerKg(r),
       source: "at" as const,
       payload: { ...r },
     };
@@ -132,19 +135,25 @@ async function fetchAtRows(
 ): Promise<AtAuctionRow[]> {
   const key = getEnv().dataGoKrServiceKey;
   if (!key) return [];
-  const params = new URLSearchParams({
-    serviceKey: key,
-    pageNo: "1",
-    numOfRows: "1000",
-    saleDate,
-    whsalCd: marketCode,
-    type: "json",
-  });
-  const res = await fetch(`${AT_ENDPOINT}?${params}`, {
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`aT HTTP ${res.status}`);
-  return parseAtItems(await res.json());
+  const out: AtAuctionRow[] = [];
+  for (let page = 1; page <= 5; page += 1) {
+    const params = new URLSearchParams({
+      serviceKey: key,
+      pageNo: String(page),
+      numOfRows: "1000",
+      saleDate,
+      whsalCd: marketCode,
+      type: "json",
+    });
+    const res = await fetch(`${AT_ENDPOINT}?${params}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`aT HTTP ${res.status}`);
+    const text = await res.text();
+    if (text.trimStart().startsWith("<")) break;
+    const rows = parseAtItems(JSON.parse(text));
+    out.push(...rows);
+    if (rows.length < 1000) break;
+  }
+  return out;
 }
 
 async function fetchGarakRowsForItem(

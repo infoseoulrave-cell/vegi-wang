@@ -6,6 +6,7 @@ import {
   servableCatalog,
   sourceMarketFor,
 } from "@/lib/catalog";
+import { fetchAtAuctionPerKg, GARAK_WHSAL_CD } from "@/lib/sources/atMarket";
 import { fetchFishMarketPerKg } from "@/lib/sources/fishMarket";
 import { fetchGarakAuctionPerKg } from "@/lib/sources/garak";
 import { fetchKamisPrices } from "@/lib/sources/kamis";
@@ -33,9 +34,10 @@ export async function GET(req: Request) {
   const catalog = servableCatalog();
   const targets = limitParam > 0 ? catalog.slice(0, limitParam) : catalog;
 
-  const [kamis, fish] = await Promise.all([
+  const [kamis, fish, at] = await Promise.all([
     fetchKamisPrices(["채소", "과일", "수산"], date, kgPerConsumerUnitByName),
     fetchFishMarketPerKg(date),
+    fetchAtAuctionPerKg(date, GARAK_WHSAL_CD),
   ]);
 
   const rows = [];
@@ -48,6 +50,7 @@ export async function GET(req: Request) {
         ? await fetchGarakAuctionPerKg(itemQueryName(item), date)
         : null;
 
+    const atHit = market === "garak" ? lookupBySourceName(at, item) : undefined;
     const k = kamis?.get(item.name) ?? kamis?.get(itemQueryName(item));
     const kamisSeriesToday =
       k?.seriesPerKg?.filter((p) => p.date === date).at(-1)?.price ?? null;
@@ -57,7 +60,7 @@ export async function GET(req: Request) {
             perKg: fishHit && !fishHit.rejected ? fishHit.perKg : null,
             rejected: fishHit?.rejected ?? null,
           }
-        : resolveAuctionPerKg(garakPerKg, kamisSeriesToday);
+        : resolveAuctionPerKg(garakPerKg, kamisSeriesToday, atHit?.perKg ?? null);
 
     const ratio =
       garakPerKg && kamisSeriesToday
@@ -70,6 +73,8 @@ export async function GET(req: Request) {
       sourceMarket: market,
       auctionUnit: item.auctionUnit,
       weightKg: item.weightKg,
+      atPerKg: atHit?.perKg ?? null,
+      atDroppedRows: atHit?.droppedRows ?? null,
       garakPerKg,
       fishMarketPerKg: fishHit?.perKg ?? null,
       fishMarketCount: fishHit?.marketCount ?? null,

@@ -24,6 +24,24 @@ describe("resolveAuctionPerKg", () => {
     expect(resolveAuctionPerKg(1895, 1128).perKg).toBe(1895);
   });
 
+  it("aT가 있으면 가락·KAMIS보다 우선한다", () => {
+    // aT는 전국 시장을 한 번에 주고 거래량 가중이 가능하다
+    expect(resolveAuctionPerKg(1895, 1128, 1800).perKg).toBe(1800);
+    expect(resolveAuctionPerKg(null, null, 1800).perKg).toBe(1800);
+  });
+
+  it("aT가 없으면 가락으로, 가락도 없으면 KAMIS로 떨어진다", () => {
+    expect(resolveAuctionPerKg(1895, 1128, null).perKg).toBe(1895);
+    expect(resolveAuctionPerKg(null, 1128, null).perKg).toBe(1128);
+  });
+
+  it("채택값과 어느 한 소스라도 크게 어긋나면 전부 버린다", () => {
+    // aT 1,800 vs 가락 19,461 → 10배 이상
+    const r = resolveAuctionPerKg(19461, 1128, 1800);
+    expect(r.perKg).toBeNull();
+    expect(r.rejected).toMatch(/축 불일치/);
+  });
+
   it("한쪽만 있으면 그것을 쓴다", () => {
     expect(resolveAuctionPerKg(1900, null).perKg).toBe(1900);
     expect(resolveAuctionPerKg(null, 2100).perKg).toBe(2100);

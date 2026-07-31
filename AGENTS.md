@@ -24,7 +24,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
    원/kg로 바꾼다. dpr5·dpr6·dpr7과 개수 기반 단위("1포기","10개")는 변환되지 않는다.
    반드시 `resolveKamisPerKg(slot, value, unit, kgPerPiece)`를 거칠 것. 회귀 테스트는 `kamis.test.ts`.
 3. **경락가 원천은 카테고리마다 다르다.** `sourceMarketFor(item)`이 정한다.
-   - 청과 → **가락**: 행마다 UUN을 주므로 자기완결적 환산.
+   - 청과 → **aT(15141808) → 가락 → KAMIS** 순. aT는 한 번 호출로 시장 전체를
+     주고 거래량이 있어 물량 가중평균이 된다. 가락은 대체이자 교차검증 상대.
    - 수산 → **해수부 위판장**(15056856): `csmtAmount ÷ csmtWt`로 원/kg를 직접 얻는다.
      단위 문자열을 파싱하지 않으므로 가락보다도 안전하다. 원문 단가(`csmtUntpc`)는
      상자/마리 기준이 섞여 있어 **대표값으로 쓰면 안 된다** — 교차검증용이다.
@@ -41,6 +42,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 진단:
 - `/api/debug/price-axis` — 품목별 소스별 원/kg를 나란히 덤프. 축이 어긋나면 여기서 먼저 보인다.
+- `/api/debug/at-market` — aT 필드명 확정용. 응답 원시 키와 **실제로 매칭된 키**를
+  내려준다. `price`·`unit`이 잡히고 `dropRate`가 낮으면 `AT_FIELD_CANDIDATES`를 실제 키로 좁힌다.
 - `/api/debug/fish-market` — 위판장 축 확정용. `DATA_GO_KR_SERVICE_KEY`가 붙는 순간
   ① `csmtWt`가 kg인지 ② `csmtUntpc`가 원/kg인지 ③ 품목명이 매칭되는지를 확인하고,
   셋 다 통과하면 `fishMarket.ts`의 "미검증" 주석을 지운다.
