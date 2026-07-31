@@ -205,6 +205,65 @@ describe("db migrations", () => {
     ).rejects.toThrow();
   });
 
+  /**
+   * 정규식 회귀 방지.
+   * 가락 UUN에는 '.16kg' '.7kg'처럼 선행 0이 없는 값이 온다.
+   * '[0-9]+' 로 시작하는 패턴은 '.16kg'을 16으로 읽어 100배 오차를 낸다.
+   * 실제로 프로덕션 36행이 이 버그로 잘못 환산돼 있었다.
+   */
+  it("선행 0이 없는 단위('.16kg')를 100배 틀리게 읽지 않는다", async () => {
+    await db.exec(`
+      INSERT INTO items (id, name, category, auction_unit, weight_kg, unit_verified)
+      VALUES ('leafy', '기타엽채', '채소', '1kg', 1, TRUE)
+      ON CONFLICT (id) DO NOTHING;
+
+      INSERT INTO raw_auction
+        (natural_key, sale_date, market_code, item_name, unit, price, source)
+      VALUES
+        ('dot-1', '2026-07-29', '110001', '기타엽채', '.16kg', 650, 'garak'),
+        ('dot-2', '2026-07-29', '110001', '딸기',     '.7kg', 41500, 'garak'),
+        ('dot-3', '2026-07-29', '110001', '사과',     '10kg', 31390, 'garak');
+    `);
+
+    await applyAll(db);
+
+    const r = await db.query<{ unit: string; unit_kg: number; per_kg: number }>(
+      `SELECT unit, unit_kg::float8 AS unit_kg, price_per_kg::float8 AS per_kg
+       FROM raw_auction WHERE natural_key LIKE 'dot-%' ORDER BY natural_key`,
+    );
+    const [leafy, berry, apple] = r.rows;
+
+    expect(leafy.unit_kg).toBeCloseTo(0.16, 5);
+    expect(leafy.per_kg).toBeCloseTo(4062.5, 1);
+
+    expect(berry.unit_kg).toBeCloseTo(0.7, 5);
+    expect(berry.per_kg).toBeCloseTo(59285.71, 1);
+
+    // 일반 단위는 그대로
+    expect(apple.unit_kg).toBeCloseTo(10, 5);
+    expect(apple.per_kg).toBeCloseTo(3139, 1);
+  }, 60_000);
+
+  it("표본 14일 미만 기준선은 남기지 않는다", async () => {
+    await db.exec(`
+      INSERT INTO items (id, name, category, auction_unit, weight_kg, unit_verified)
+      VALUES ('shortspan', '표본부족', '채소', '10kg', 10, TRUE)
+      ON CONFLICT (id) DO NOTHING;
+
+      INSERT INTO item_baseline
+        (item_id, market_code, window_days, as_of_date, avg_price, sample_days, method)
+      VALUES ('shortspan', '110001', 30, '2026-07-29', 10000, 1, 'moving_avg_30')
+      ON CONFLICT DO NOTHING;
+    `);
+
+    await applyAll(db);
+
+    const left = await db.query<{ c: number }>(
+      `SELECT COUNT(*)::int AS c FROM item_baseline WHERE sample_days < 14`,
+    );
+    expect(left.rows[0].c).toBe(0);
+  }, 60_000);
+
   it("소매가 채널 테이블과 신뢰 뷰가 존재한다", async () => {
     const t = await db.query<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables

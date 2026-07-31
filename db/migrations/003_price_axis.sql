@@ -26,6 +26,18 @@ CREATE INDEX IF NOT EXISTS raw_auction_per_kg_idx
   ON raw_auction (item_name, sale_date)
   WHERE price_per_kg IS NOT NULL;
 
+-- 기존 원천 행의 파생 원/kg 백필.
+-- 정규식은 선행 0이 없는 '.16kg' 형태를 반드시 포함해야 한다 (아래 주석 참고).
+UPDATE raw_auction
+SET unit_kg = NULLIF(
+      substring(unit FROM '([0-9]*\.?[0-9]+)\s*[kK][gG]'), ''
+    )::numeric
+WHERE unit_kg IS NULL AND unit IS NOT NULL;
+
+UPDATE raw_auction
+SET price_per_kg = ROUND(price / unit_kg, 2)
+WHERE price_per_kg IS NULL AND unit_kg IS NOT NULL AND unit_kg > 0;
+
 -- ---------------------------------------------------------------------------
 -- 일별 집계: 원/kg 축 + 신선도 상태
 -- ---------------------------------------------------------------------------
@@ -58,10 +70,13 @@ BEGIN
 END $$;
 
 -- 기존 행이 있다면 거래단위 평균을 unit_kg로 환산해 채운다.
+-- ⚠ 정규식 주의: 가락 UUN에는 '.16kg' '.7kg'처럼 선행 0이 없는 값이 온다.
+--   '[0-9]+' 로 시작하면 '.16kg'이 16으로 읽혀 100배 오차가 난다.
+--   TypeScript parseUnitKg는 [\d.]+ 라 정상이었고 SQL만 틀렸었다.
 -- unit_kg를 모르는 행은 NULL로 남겨 서빙에서 제외되게 한다.
 UPDATE daily_item_price
 SET unit_kg = NULLIF(
-      substring(unit FROM '([0-9]+(?:\.[0-9]+)?)\s*[kK][gG]'), ''
+      substring(unit FROM '([0-9]*\.?[0-9]+)\s*[kK][gG]'), ''
     )::numeric
 WHERE unit_kg IS NULL AND unit IS NOT NULL;
 
@@ -98,6 +113,19 @@ BEGIN
       CHECK (method IN ('kamis_dpr7', 'moving_avg_30', 'seasonal', 'none'));
   END IF;
 END $$;
+
+-- 기존 기준선의 원/kg 백필 — daily 집계의 unit_kg를 근거로 환산한다.
+UPDATE item_baseline b
+SET avg_price_per_kg = ROUND(b.avg_price / d.unit_kg, 2)
+FROM daily_item_price d
+WHERE b.avg_price_per_kg IS NULL
+  AND d.item_id = b.item_id AND d.market_code = b.market_code
+  AND d.unit_kg IS NOT NULL AND d.unit_kg > 0;
+
+-- 표본이 부족한데 'moving_avg_30'을 자처하던 과거 행 제거.
+-- 새 규칙(MIN_BASELINE_SAMPLE_DAYS=14)에서는 애초에 생성되지 않는다.
+-- 파생 데이터라 raw_auction에서 언제든 재계산된다.
+DELETE FROM item_baseline WHERE sample_days < 14;
 
 -- ---------------------------------------------------------------------------
 -- 품목 마스터: 환산표 검증 상태
