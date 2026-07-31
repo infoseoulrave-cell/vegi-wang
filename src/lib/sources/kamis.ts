@@ -32,6 +32,36 @@ export const KAMIS_CATEGORY_CODE: Record<ProduceCategory, string> = {
   수산: "600",
 };
 
+/**
+ * KAMIS 부류 전체.
+ *
+ * 현재 서빙은 채소·과일·수산(200/400/600) 셋만 조회한다. 나머지 셋은
+ * **경락가 원천이 있는지가 갈린다** — 우리 서비스는 도매 대 소매 비교가
+ * 핵심이라 소매만 있는 부류는 넣을 수 없다.
+ *
+ *   100 식량작물 : 감자·고구마는 가락 청과에서 거래된다 → 확장 후보
+ *                  쌀·콩은 양곡이라 가락 청과에 없다 → 불가
+ *   300 특용작물 : 느타리·팽이·새송이 버섯이 가락에서 거래된다 → 확장 후보
+ *   500 축산물   : 축산물도매시장이 별도 체계다 → 현재 원천 없음
+ *
+ * 실제 품목명·단위는 `/api/debug/kamis-catalog?codes=100,300`으로 확인한 뒤
+ * 카탈로그에 넣는다. 추측으로 추가하지 않는다.
+ */
+export const KAMIS_ALL_CATEGORIES: Array<{
+  code: string;
+  name: string;
+  /** 경락가 원천 확보 가능 여부 */
+  hasAuctionSource: "yes" | "partial" | "no";
+  note: string;
+}> = [
+  { code: "100", name: "식량작물", hasAuctionSource: "partial", note: "감자·고구마는 가락 청과 거래. 쌀·콩은 양곡이라 불가" },
+  { code: "200", name: "채소류", hasAuctionSource: "yes", note: "현재 서빙 중" },
+  { code: "300", name: "특용작물", hasAuctionSource: "partial", note: "버섯류는 가락 거래. 참깨·들깨는 확인 필요" },
+  { code: "400", name: "과일류", hasAuctionSource: "yes", note: "현재 서빙 중" },
+  { code: "500", name: "축산물", hasAuctionSource: "no", note: "축산물도매시장 별도 체계 — 원천 없음" },
+  { code: "600", name: "수산물", hasAuctionSource: "yes", note: "현재 서빙 중 (원천은 해수부 위판장)" },
+];
+
 /** KAMIS 가격 슬롯 */
 export type DprSlot =
   | "dpr1"
@@ -468,6 +498,64 @@ export async function listKamisCatalogItems(
     }
   }
 
+  return out.length ? out : null;
+}
+
+/**
+ * 임의 부류코드로 KAMIS 품목·단위 목록을 조회한다 (카탈로그 확장 탐색용).
+ * ProduceCategory에 없는 부류(식량작물·특용작물 등)를 실제 응답으로
+ * 확인하기 위한 경로다.
+ */
+export async function listKamisItemsByCode(
+  codes: string[],
+  dateISO: string,
+): Promise<
+  | {
+      code: string;
+      name: string;
+      wholesaleUnit: string;
+      retailUnit: string;
+      hasWholesale: boolean;
+      hasRetail: boolean;
+    }[]
+  | null
+> {
+  const out: {
+    code: string;
+    name: string;
+    wholesaleUnit: string;
+    retailUnit: string;
+    hasWholesale: boolean;
+    hasRetail: boolean;
+  }[] = [];
+
+  for (const code of [...new Set(codes)]) {
+    const [wholesale, retail] = await Promise.all([
+      fetchCategory("02", code, dateISO),
+      fetchCategory("01", code, dateISO),
+    ]);
+    if (wholesale === null && retail === null) continue;
+
+    const wMap = new Map((wholesale ?? []).map((r) => [r.itemName, r]));
+    const rMap = new Map((retail ?? []).map((r) => [r.itemName, r]));
+    for (const name of new Set([...wMap.keys(), ...rMap.keys()])) {
+      const w = wMap.get(name);
+      const r = rMap.get(name);
+      const hasWholesale = Boolean(
+        w && (latestDailySlot(w.raw) != null || w.raw.dpr7 > 0),
+      );
+      const hasRetail = Boolean(r && latestDailySlot(r.raw) != null);
+      if (!hasWholesale && !hasRetail) continue;
+      out.push({
+        code,
+        name,
+        wholesaleUnit: w?.unit ?? "",
+        retailUnit: r?.unit ?? "",
+        hasWholesale,
+        hasRetail,
+      });
+    }
+  }
   return out.length ? out : null;
 }
 
