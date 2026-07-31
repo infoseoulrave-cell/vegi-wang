@@ -52,21 +52,65 @@ function unitPrice(perKg: number, unitKg: number | null): number {
 class PgAuctionRepo implements AuctionRepository {
   constructor(private sql: Sql) {}
 
+  /**
+   * 원천 행 벌크 upsert.
+   *
+   * 예전에는 한 행씩 INSERT를 돌렸다. 하루치가 수천 행이라 도쿄 리전
+   * Postgres로 수천 번 왕복이 생겼고, 실제로 7/31 수집이 3,968행에서
+   * 300초 한도에 걸려 죽었다(조회 자체는 8초면 끝난다).
+   * 청크 단위 다중행 INSERT로 왕복 횟수를 수천 → 수십으로 줄인다.
+   */
   async upsertRaw(records: RawAuctionRecord[]): Promise<number> {
     if (!records.length) return 0;
+
+    // 자연키가 겹치는 행이 한 배치에 들어가면
+    // "ON CONFLICT DO UPDATE command cannot affect row a second time" 가 난다.
+    const unique = new Map<string, RawAuctionRecord>();
+    for (const r of records) unique.set(r.naturalKey, r);
+    const rows = [...unique.values()];
+
+    const CHUNK = 500;
     let n = 0;
-    for (const r of records) {
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK).map((r) => ({
+        natural_key: r.naturalKey,
+        sale_date: r.saleDate,
+        market_code: r.marketCode,
+        corp_code: r.corpCode,
+        corp_name: r.corpName,
+        item_name: r.itemName,
+        item_variety: r.itemVariety,
+        unit: r.unit,
+        grade: r.grade,
+        origin: r.origin,
+        qty: r.qty,
+        price: r.price,
+        unit_kg: r.unitKg,
+        price_per_kg: r.pricePerKg,
+        source: r.source,
+        payload: r.payload ? this.sql.json(r.payload as never) : null,
+      }));
+
       await this.sql`
-        INSERT INTO raw_auction (
-          natural_key, sale_date, market_code, corp_code, corp_name,
-          item_name, item_variety, unit, grade, origin, qty, price,
-          unit_kg, price_per_kg, source, payload
-        ) VALUES (
-          ${r.naturalKey}, ${r.saleDate}::date, ${r.marketCode}, ${r.corpCode},
-          ${r.corpName}, ${r.itemName}, ${r.itemVariety}, ${r.unit}, ${r.grade},
-          ${r.origin}, ${r.qty}, ${r.price}, ${r.unitKg}, ${r.pricePerKg}, ${r.source},
-          ${r.payload ? this.sql.json(r.payload as never) : null}
-        )
+        INSERT INTO raw_auction ${this.sql(
+          chunk,
+          "natural_key",
+          "sale_date",
+          "market_code",
+          "corp_code",
+          "corp_name",
+          "item_name",
+          "item_variety",
+          "unit",
+          "grade",
+          "origin",
+          "qty",
+          "price",
+          "unit_kg",
+          "price_per_kg",
+          "source",
+          "payload",
+        )}
         ON CONFLICT (natural_key) DO UPDATE SET
           price = EXCLUDED.price,
           unit_kg = EXCLUDED.unit_kg,
@@ -75,7 +119,7 @@ class PgAuctionRepo implements AuctionRepository {
           payload = EXCLUDED.payload,
           ingested_at = NOW()
       `;
-      n += 1;
+      n += chunk.length;
     }
     return n;
   }
@@ -107,27 +151,65 @@ class PgAuctionRepo implements AuctionRepository {
     }));
   }
 
+  /** 일별 집계 벌크 upsert — upsertRaw와 같은 이유로 청크 단위로 넣는다. */
   async upsertDaily(rows: DailyItemPrice[]): Promise<number> {
     if (!rows.length) return 0;
-    let n = 0;
+
+    // (sale_date, market_code, item_name) 중복이 한 배치에 있으면 충돌한다
+    const unique = new Map<string, DailyItemPrice>();
     for (const r of rows) {
+      unique.set(`${r.saleDate}|${r.marketCode}|${r.itemName}`, r);
+    }
+    const list = [...unique.values()];
+
+    const CHUNK = 500;
+    let n = 0;
+    for (let i = 0; i < list.length; i += CHUNK) {
+      const chunk = list.slice(i, i + CHUNK).map((r) => ({
+        sale_date: r.saleDate,
+        market_code: r.marketCode,
+        item_id: r.itemId,
+        item_name: r.itemName,
+        avg_price: unitPrice(r.avgPricePerKg, r.unitKg),
+        min_price: unitPrice(r.minPricePerKg, r.unitKg),
+        max_price: unitPrice(r.maxPricePerKg, r.unitKg),
+        avg_price_per_kg: r.avgPricePerKg,
+        min_price_per_kg: r.minPricePerKg,
+        max_price_per_kg: r.maxPricePerKg,
+        unit_kg: r.unitKg,
+        volume: r.volume,
+        trade_count: r.tradeCount,
+        unit: r.unit,
+        grade: r.grade,
+        origin: r.origin,
+        source: r.source,
+        price_status: r.priceStatus,
+        as_of_date: r.asOfDate,
+      }));
+
       await this.sql`
-        INSERT INTO daily_item_price (
-          sale_date, market_code, item_id, item_name,
-          avg_price, min_price, max_price,
-          avg_price_per_kg, min_price_per_kg, max_price_per_kg, unit_kg,
-          volume, trade_count, unit, grade, origin, source,
-          price_status, as_of_date
-        ) VALUES (
-          ${r.saleDate}::date, ${r.marketCode}, ${r.itemId}, ${r.itemName},
-          ${unitPrice(r.avgPricePerKg, r.unitKg)},
-          ${unitPrice(r.minPricePerKg, r.unitKg)},
-          ${unitPrice(r.maxPricePerKg, r.unitKg)},
-          ${r.avgPricePerKg}, ${r.minPricePerKg}, ${r.maxPricePerKg}, ${r.unitKg},
-          ${r.volume}, ${r.tradeCount},
-          ${r.unit}, ${r.grade}, ${r.origin}, ${r.source},
-          ${r.priceStatus}, ${r.asOfDate}
-        )
+        INSERT INTO daily_item_price ${this.sql(
+          chunk,
+          "sale_date",
+          "market_code",
+          "item_id",
+          "item_name",
+          "avg_price",
+          "min_price",
+          "max_price",
+          "avg_price_per_kg",
+          "min_price_per_kg",
+          "max_price_per_kg",
+          "unit_kg",
+          "volume",
+          "trade_count",
+          "unit",
+          "grade",
+          "origin",
+          "source",
+          "price_status",
+          "as_of_date",
+        )}
         ON CONFLICT (sale_date, market_code, item_name) DO UPDATE SET
           item_id = EXCLUDED.item_id,
           avg_price = EXCLUDED.avg_price,
@@ -147,7 +229,7 @@ class PgAuctionRepo implements AuctionRepository {
           source = EXCLUDED.source,
           aggregated_at = NOW()
       `;
-      n += 1;
+      n += chunk.length;
     }
     return n;
   }
