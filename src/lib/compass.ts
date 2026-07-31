@@ -3,6 +3,7 @@ import type {
   PriceItem,
   PriceItemWithSignal,
   PricePoint,
+  PriceSourceMarket,
   RetailGapLevel,
 } from "./types";
 import {
@@ -21,6 +22,21 @@ export const EXPENSIVE_THRESHOLD = 10;
 /* ── 유통 거품 지표 (소매가 ÷ 경락가, 원/kg 기준) ──────────── */
 export const REASONABLE_MAX = 1.8;
 export const BUBBLE_MIN = 2.5;
+
+/**
+ * 거품 판정을 적용할 수 있는 시장.
+ *
+ * 임계값 1.8 / 2.5는 **도매시장 → 소매** 한 단계를 전제로 잡힌 값이다.
+ * 수산은 경락가가 **산지 위판가**라 유통 단계가 하나 더 많아 배수가 구조적으로
+ * 크게 나온다. 같은 임계값을 들이대면 대부분이 '거품'으로 찍히는데,
+ * 그건 유통 구조를 반영한 것이지 우리가 주장할 수 있는 판정이 아니다.
+ *
+ * 배수 자체는 그대로 보여주고, **판정만 유보한다.**
+ * 실측 분포가 쌓이면 카테고리별 임계값을 잡아 다시 켠다.
+ */
+export function canJudgeRetailGap(sourceMarket: PriceSourceMarket): boolean {
+  return sourceMarket === "garak";
+}
 
 export function pct(current: number, base: number): number {
   if (!base) return 0;
@@ -131,9 +147,15 @@ export function withSignal(item: PriceItem): PriceItemWithSignal {
   const history = normalizeSeries(item.history ?? []);
   // 오늘 한 점만 있는 시계열은 추세가 아니다
   const hasSeries = history.filter((p) => p.price > 0).length >= 2;
-  const trend = analyzeTrend(history, perKg);
+  /*
+   * 분위·편차는 **시계열과 같은 원천 값**으로 계산한다.
+   * 표시 가격(가락)을 KAMIS 분포에 끼워 넣으면 원천 차이만큼 위로 밀려
+   * 모든 품목이 '고가권'이 된다.
+   */
+  const trendRef = item.trendPerKg ?? perKg;
+  const trend = analyzeTrend(history, trendRef);
   const baseline = item.auctionBaselinePerKg || (hasSeries ? trend.avg : 0);
-  const deviationRate = baseline > 0 ? pct(perKg, baseline) : undefined;
+  const deviationRate = baseline > 0 ? pct(trendRef, baseline) : undefined;
 
   const trendBasis: PriceItemWithSignal["trendBasis"] = hasSeries
     ? "series"
@@ -168,7 +190,9 @@ export function withSignal(item: PriceItem): PriceItemWithSignal {
       ? Math.round((item.retailPerKg! / perKg) * 100) / 100
       : undefined;
   const retailGap =
-    retailMultiple != null ? toRetailGap(retailMultiple) : undefined;
+    retailMultiple != null && canJudgeRetailGap(item.sourceMarket)
+      ? toRetailGap(retailMultiple)
+      : undefined;
   const savingPerKg = hasRetail
     ? Math.max(item.retailPerKg! - perKg, 0)
     : undefined;

@@ -127,6 +127,62 @@ describe("withSignal (최근 동향 포지션)", () => {
     expect(s.trendPosition).toBe("low");
   });
 
+  /**
+   * 분위는 시계열과 같은 원천 값으로 재야 한다.
+   * 표시 가격(가락)을 KAMIS 분포에 끼워 넣으면 원천 차이만큼 위로 밀려
+   * 모든 품목이 '고가권'이 된다.
+   */
+  it("trendPerKg가 있으면 그 값으로 분위를 잰다", () => {
+    const kamisSeries = [
+      { date: "2026-07-20", price: 1000, source: "kamis" as const },
+      { date: "2026-07-25", price: 1100, source: "kamis" as const },
+      { date: "2026-07-31", price: 1050, source: "kamis" as const },
+    ];
+    // 표시 가격은 가락 1,895 (KAMIS 분포 최상단) — 그대로 재면 항상 고가권
+    const naive = withSignal({
+      ...cabbage,
+      auctionPerKg: 1895,
+      auctionBaselinePerKg: 0,
+      baselineMethod: "none",
+      history: kamisSeries,
+    });
+    expect(naive.trendPosition).toBe("high");
+
+    // KAMIS 오늘값(1,050)으로 재면 중위권 — 실제 시세 위치
+    const correct = withSignal({
+      ...cabbage,
+      auctionPerKg: 1895,
+      trendPerKg: 1050,
+      trendSource: "kamis",
+      auctionBaselinePerKg: 0,
+      baselineMethod: "none",
+      history: kamisSeries,
+    });
+    expect(correct.trendPosition).toBe("mid");
+    // 표시 가격은 그대로 가락
+    expect(correct.auctionPerKg).toBe(1895);
+  });
+
+  it("수산은 거품 판정을 유보하고 배수만 남긴다", () => {
+    const fish = withSignal({
+      ...cabbage,
+      sourceMarket: "fish_market",
+      auctionPerKg: 5000,
+      retailPerKg: 20000,
+    });
+    // 배수는 계산한다
+    expect(fish.retailMultiple).toBe(4);
+    // 산지 위판가라 유통 단계가 달라 청과 임계값으로 판정하지 않는다
+    expect(fish.retailGap).toBeUndefined();
+
+    const produce = withSignal({
+      ...cabbage,
+      auctionPerKg: 5000,
+      retailPerKg: 20000,
+    });
+    expect(produce.retailGap).toBe("bubble");
+  });
+
   it("이월 상태와 기준일을 그대로 전달한다", () => {
     const s = withSignal({
       ...cabbage,

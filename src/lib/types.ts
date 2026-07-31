@@ -148,6 +148,21 @@ export interface PriceItem extends CatalogItem {
   /** 오늘 경락가를 준 원천 — 비교 가능 여부 판정에 쓴다 */
   priceSource?: PriceSource;
 
+  /**
+   * 추세 지표(분위·편차) 계산에 쓸 값. **history와 같은 원천**이어야 한다.
+   *
+   * 표시 가격은 가장 정확한 원천(가락)에서 오지만, 시계열은 KAMIS만 있을 수
+   * 있다. 그때 가락 값을 KAMIS 분포에 끼워 넣으면 원천 차이만큼 위쪽으로
+   * 밀려 항상 '고가권'이 된다. 그래서 분위는 KAMIS 값으로 KAMIS 분포 안에서
+   * 계산한다 — "어느 수준인가"는 분포에 대한 진술이라 원천이 일관되면 유효하다.
+   *
+   * 반면 등락률은 두 값의 **차이**를 주장하므로 표시 가격과 원천이 달라선
+   * 안 된다. auctionPrevPerKg는 계속 엄격하게 같은 원천일 때만 채운다.
+   */
+  trendPerKg?: number;
+  /** 추세 지표가 어느 원천 기준인지 — UI가 라벨로 밝힌다 */
+  trendSource?: PriceSource;
+
   /** 경락가 신선도 */
   priceStatus: PriceStatus;
   /** carried일 때 실측 기준일 (YYYY-MM-DD) */

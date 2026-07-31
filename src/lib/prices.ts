@@ -272,11 +272,18 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
       continue;
     }
 
-    // 오늘값과 원천이 같은 시계열만 비교에 쓴다
-    const series =
+    /*
+     * 이월 판정에는 오늘값과 같은 원천 시계열만 쓴다.
+     * (가락 값을 KAMIS 어제값으로 이월하면 원천이 바뀐 걸 숨기게 된다.)
+     */
+    const carrySeries =
       priceSource === "kamis" || todayPerKg == null ? kamisSeries : [];
 
-    const resolved = resolveWithCarryForward(todayPerKg, series, todayISO);
+    const resolved = resolveWithCarryForward(
+      todayPerKg,
+      carrySeries,
+      todayISO,
+    );
     if (!resolved) continue; // 실측 없음 → 비노출
     // 이월이면 원천은 시계열(KAMIS) 쪽이다
     if (resolved.status === "carried") priceSource = "kamis";
@@ -290,30 +297,53 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
     if (resolved.status === "live") auctionLive = true;
     if (k?.retailPerKg) retailLive = true;
 
-    const history = normalizeSeries([
-      ...series,
-      {
-        date: todayISO,
-        price: resolved.perKg,
-        label: "오늘",
-        source: priceSource,
-      },
-    ]);
+    /*
+     * 추세용 시계열은 **KAMIS 안에서 자기완결적으로** 구성한다.
+     * 표시 가격이 가락이어도, 분위는 KAMIS 오늘값을 KAMIS 분포에 놓고 잰다.
+     * 수산은 산지 위판가라 도매시장 시계열과 유통 단계가 달라 제외한다.
+     */
+    const useKamisTrend =
+      sourceMarket === "garak" && kamisToday != null && kamisSeries.length > 0;
+
+    const history = useKamisTrend
+      ? normalizeSeries([
+          ...kamisSeries,
+          {
+            date: todayISO,
+            price: kamisToday!,
+            label: "오늘",
+            source: "kamis" as const,
+          },
+        ])
+      : normalizeSeries([
+          ...carrySeries,
+          {
+            date: todayISO,
+            price: resolved.perKg,
+            label: "오늘",
+            source: priceSource,
+          },
+        ]);
 
     items.push({
       ...base,
       auctionPerKg: resolved.perKg,
-      // 같은 원천 전일값이 없으면 등락률을 만들지 않는다
-      auctionPrevPerKg: prevFromSeries(series, todayISO),
+      // 등락률은 두 값의 차이를 주장하므로 원천이 같을 때만 만든다
+      auctionPrevPerKg: prevFromSeries(carrySeries, todayISO),
+      trendPerKg: useKamisTrend ? kamisToday! : undefined,
+      trendSource: useKamisTrend ? "kamis" : priceSource,
       /*
        * KAMIS 평년가(dpr7)는 KAMIS 원천이다. 오늘값이 가락/aT에서 왔다면
        * 기준선으로 쓸 수 없다 — 모든 품목에 원천 차이만큼의 상수 편차가 얹힌다.
        * 자체 이력이 쌓이면 DB 경로가 같은 원천 기준선을 준다.
        */
+      // 평년가도 KAMIS 값과 비교할 때만 유효하다 (trendRef가 KAMIS일 때)
       auctionBaselinePerKg:
-        priceSource === "kamis" ? (k?.baselinePerKg ?? 0) : 0,
+        useKamisTrend || priceSource === "kamis" ? (k?.baselinePerKg ?? 0) : 0,
       baselineMethod:
-        priceSource === "kamis" && k?.baselinePerKg ? "kamis_dpr7" : "none",
+        (useKamisTrend || priceSource === "kamis") && k?.baselinePerKg
+          ? "kamis_dpr7"
+          : "none",
       retailPerKg: k?.retailPerKg,
       sourceMarket,
       priceSource,

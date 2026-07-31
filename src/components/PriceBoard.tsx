@@ -13,6 +13,7 @@ import {
   multiple,
   priceStatusLabel,
   signedPct,
+  trendSourceLabel,
   won,
 } from "@/lib/format";
 import {
@@ -132,6 +133,12 @@ export function PriceBoard({
                     </p>
                     <p className="text-[11px] font-medium text-foreground/50">
                       분위 {Math.round(item.trendPercentile)}% · {meta.label}
+                      {trendSourceLabel(item.trendSource) &&
+                        item.trendSource !== item.priceSource && (
+                          <span className="ml-1 text-foreground/40">
+                            ({trendSourceLabel(item.trendSource)})
+                          </span>
+                        )}
                     </p>
                   </div>
                   <PriceSparkline series={item.chartSeries} />
@@ -181,8 +188,9 @@ export function PriceBoard({
                   </span>
                   <RetailGapBadge level={item.retailGap} />
                 </div>
-                {/* 소매가가 없으면 배수·절약액을 지어내지 않는다 */}
-                {item.retailMultiple != null ? (
+                {/* 소매가가 없으면 배수·절약액을 지어내지 않는다.
+                    거품 판정 근거가 없는 시장(수산)은 배수만 보여준다. */}
+                {item.retailMultiple != null && item.retailGap != null ? (
                   <p className="mt-1 text-sm">
                     <span className="font-bold text-brand-dark">
                       소매의 {multiple(item.retailMultiple)}
@@ -190,6 +198,16 @@ export function PriceBoard({
                     <span className="text-foreground/60">
                       {" "}
                       · {item.consumerUnit}당 {won(item.savingPerUnit)} 절약
+                    </span>
+                  </p>
+                ) : item.retailMultiple != null ? (
+                  <p className="mt-1 text-sm">
+                    <span className="font-bold text-brand-dark">
+                      소매의 {multiple(item.retailMultiple)}
+                    </span>
+                    <span className="text-foreground/50">
+                      {" "}
+                      · 산지 위판가 기준이라 유통 단계가 하나 더 많습니다
                     </span>
                   </p>
                 ) : (
