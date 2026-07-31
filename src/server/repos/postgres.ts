@@ -253,11 +253,14 @@ class PgAuctionRepo implements AuctionRepository {
     toDate: string,
   ): Promise<DailyItemPrice[]> {
     const rows = await this.sql`
-      SELECT sale_date::text, market_code, item_id, item_name, avg_price, min_price,
-             max_price, volume, trade_count, unit, grade, origin, source
+      SELECT sale_date::text, market_code, item_id, item_name,
+             avg_price_per_kg, min_price_per_kg, max_price_per_kg, unit_kg,
+             volume, trade_count, unit, grade, origin, source,
+             price_status, as_of_date::text
       FROM daily_item_price
       WHERE market_code = ${marketCode}
         AND item_name = ${itemName}
+        AND avg_price_per_kg IS NOT NULL
         AND sale_date BETWEEN ${fromDate}::date AND ${toDate}::date
       ORDER BY sale_date
     `;
@@ -313,7 +316,8 @@ class PgAuctionRepo implements AuctionRepository {
     windowDays: number,
   ): Promise<ItemBaseline[]> {
     const rows = await this.sql`
-      SELECT item_id, market_code, window_days, as_of_date::text, avg_price, sample_days
+      SELECT item_id, market_code, window_days, as_of_date::text,
+             avg_price_per_kg, sample_days, method
       FROM item_baseline
       WHERE market_code = ${marketCode}
         AND as_of_date = ${asOfDate}::date
