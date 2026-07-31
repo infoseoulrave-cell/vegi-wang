@@ -4,7 +4,7 @@
  * 사용: node --env-file=.env.local ./scripts/go-live.mjs
  */
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import postgres from "postgres";
 
@@ -29,15 +29,24 @@ if (!cronSecret) {
 }
 
 console.log("→ migrate");
-const sqlText = readFileSync(
-  resolve(process.cwd(), "db/migrations/001_init.sql"),
-  "utf8",
-);
+// 001만 적용하던 버그 수정 — 파일명 순으로 전량 적용한다.
+// 각 마이그레이션은 IF NOT EXISTS / CREATE OR REPLACE 라 반복 실행해도 안전하다.
+const migrationsDir = resolve(process.cwd(), "db/migrations");
+const migrations = readdirSync(migrationsDir)
+  .filter((f) => f.endsWith(".sql"))
+  .sort();
+
 const sql = postgres(url, { max: 1, prepare: false, ssl: "require" });
 try {
-  await sql.unsafe(sqlText);
+  for (const name of migrations) {
+    await sql.unsafe(readFileSync(resolve(migrationsDir, name), "utf8"));
+    console.log(`  applied ${name}`);
+  }
   const [{ count }] = await sql`SELECT COUNT(*)::int AS count FROM markets`;
-  console.log(`✓ schema applied (markets=${count})`);
+  const [{ items }] = await sql`SELECT COUNT(*)::int AS items FROM items`;
+  console.log(
+    `✓ schema applied (${migrations.length}개 마이그레이션, markets=${count}, items=${items})`,
+  );
 } finally {
   await sql.end({ timeout: 5 });
 }
