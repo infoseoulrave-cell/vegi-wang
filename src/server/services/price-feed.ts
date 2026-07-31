@@ -1,4 +1,5 @@
 import {
+  extraKamisCategoryCodes,
   kgPerConsumerUnitByName,
   lookupBySourceName,
   servableCatalog,
@@ -65,6 +66,7 @@ export async function getServedPriceFeed(
     ["채소", "과일", "수산"],
     saleDate,
     kgPerConsumerUnitByName,
+    extraKamisCategoryCodes(),
   );
 
   const catalog = servableCatalog();

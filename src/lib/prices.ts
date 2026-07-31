@@ -1,5 +1,6 @@
 import {
   itemQueryName,
+  extraKamisCategoryCodes,
   kgPerConsumerUnitByName,
   lookupBySourceName,
   servableCatalog,
@@ -200,6 +201,7 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
       ["채소", "과일", "수산"],
       todayISO,
       kgPerConsumerUnitByName,
+      extraKamisCategoryCodes(),
     ),
   ]);
 

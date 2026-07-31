@@ -43,6 +43,10 @@ export const CATALOG_ITEMS: CatalogItem[] = [
   { id: "garlic-bulb", name: "피마늘", category: "채소", auctionUnit: "10kg", weightKg: 10, consumerUnit: "1kg", kgPerConsumerUnit: 1, grade: "상", origin: "국내산", unitVerified: true, verificationNote: "KAMIS 도매 단위 \"10kg\" = 10kg 일치" },
   { id: "bell-pepper", name: "피망", category: "채소", auctionUnit: "10kg", weightKg: 10, consumerUnit: "100g", kgPerConsumerUnit: 0.1, grade: "상", origin: "국내산", unitVerified: true, verificationNote: "KAMIS 도매 단위 \"10kg\" = 10kg 일치" },
   { id: "zucchini", name: "호박", category: "채소", auctionUnit: "10kg", weightKg: 10, consumerUnit: "1개", kgPerConsumerUnit: 0.3, grade: "상", origin: "경남 진주", unitVerified: true, verificationNote: "KAMIS 도매 단위 \"10kg\" = 10kg 일치" },
+  { id: "potato", name: "감자", category: "채소", auctionUnit: "20kg", weightKg: 20, consumerUnit: "100g", kgPerConsumerUnit: 0.1, grade: "상", origin: "강원", kamisCategoryCode: "100", unitVerified: true, verificationNote: "KAMIS 도매 단위 \"20kg\" = 20kg 일치" },
+  { id: "sweet-potato", name: "고구마", category: "채소", auctionUnit: "10kg", weightKg: 10, consumerUnit: "1kg", kgPerConsumerUnit: 1, grade: "상", origin: "전남 해남", kamisCategoryCode: "100", unitVerified: true, verificationNote: "KAMIS 도매 단위 \"10kg\" = 10kg 일치" },
+  { id: "oyster-mushroom", name: "느타리버섯", category: "채소", auctionUnit: "2kg", weightKg: 2, consumerUnit: "100g", kgPerConsumerUnit: 0.1, grade: "상", origin: "국내산", kamisCategoryCode: "300", unitVerified: true, verificationNote: "KAMIS 도매 단위 \"2kg\" = 2kg 일치" },
+  { id: "enoki-mushroom", name: "팽이버섯", category: "채소", auctionUnit: "5kg", weightKg: 5, consumerUnit: "150g", kgPerConsumerUnit: 0.15, grade: "상", origin: "국내산", kamisCategoryCode: "300", unitVerified: true, verificationNote: "KAMIS 도매 단위 \"5kg\" = 5kg 일치" },
 
   // ── 과일 ──────────────────────────────────────────────
   { id: "tangerine", name: "감귤", category: "과일", auctionUnit: "3kg", weightKg: 3, consumerUnit: "1개", kgPerConsumerUnit: 0.1, grade: "상", origin: "제주", unitVerified: true, verificationNote: "KAMIS 도매 단위 \"3kg\" = 3kg 일치" },

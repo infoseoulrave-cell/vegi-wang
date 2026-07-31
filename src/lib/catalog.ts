@@ -22,6 +22,20 @@ export function servableCatalog(): CatalogItem[] {
   return CATALOG_ITEMS.filter((i) => i.unitVerified);
 }
 
+/**
+ * 서빙 대상 중 KAMIS 기본 부류 밖에서 조회해야 하는 부류코드들.
+ * 감자·고구마(100), 버섯류(300)처럼 화면 분류(채소)와 KAMIS 부류가 다른 품목용.
+ */
+export function extraKamisCategoryCodes(): string[] {
+  return [
+    ...new Set(
+      servableCatalog()
+        .map((i) => i.kamisCategoryCode)
+        .filter((c): c is string => Boolean(c)),
+    ),
+  ];
+}
+
 export function getCatalogItem(id: string): CatalogItem | null {
   return CATALOG_ITEMS.find((i) => i.id === id) ?? null;
 }

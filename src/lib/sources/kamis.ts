@@ -563,10 +563,20 @@ export async function fetchKamisPrices(
   categories: ProduceCategory[],
   dateISO: string,
   kgPerPiece: KgPerPieceResolver = () => null,
+  /**
+   * 추가 부류코드. 카탈로그가 kamisCategoryCode로 override한 품목
+   * (감자·고구마=100, 버섯류=300)을 받아오기 위해 필요하다.
+   * category 기본 부류만 조회하면 이 품목들의 소매·평년가가 통째로 빠진다.
+   */
+  extraCodes: string[] = [],
 ): Promise<Map<string, KamisPrice> | null> {
-  const unique = [...new Set(categories)];
-  const jobs = unique.flatMap((cat) => {
-    const code = KAMIS_CATEGORY_CODE[cat];
+  const unique = [
+    ...new Set([
+      ...categories.map((c) => KAMIS_CATEGORY_CODE[c]),
+      ...extraCodes,
+    ]),
+  ];
+  const jobs = unique.flatMap((code) => {
     return [
       fetchCategory("02", code, dateISO).then((rows) => ({
         kind: "wholesale" as const,

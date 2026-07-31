@@ -56,9 +56,16 @@ function loadFixture() {
   const arg = process.argv[2];
   if (arg) return JSON.parse(readFileSync(resolve(ROOT, arg), "utf8"));
   const dir = resolve(ROOT, "db/fixtures");
-  const files = readdirSync(dir)
-    .filter((f) => f.startsWith("kamis-catalog-") && f.endsWith(".json"))
+  // 전 부류(100~600) fixture가 있으면 우선한다 — 감자·버섯 등이 여기에만 있다
+  const all = readdirSync(dir).filter((f) => f.endsWith(".json"));
+  const files = all
+    .filter((f) => f.startsWith("kamis-catalog-all-"))
     .sort();
+  if (!files.length) {
+    files.push(
+      ...all.filter((f) => f.startsWith("kamis-catalog-")).sort(),
+    );
+  }
   if (!files.length) {
     console.error("db/fixtures 에 kamis-catalog-*.json 이 없습니다.");
     process.exit(1);
@@ -95,6 +102,7 @@ function loadCatalog() {
       kgPerConsumerUnit: field(line, "kgPerConsumerUnit"),
       grade: field(line, "grade"),
       origin: field(line, "origin"),
+      kamisCategoryCode: field(line, "kamisCategoryCode"),
     });
   }
   return { src, items };
@@ -241,6 +249,9 @@ function serialize(r) {
     `grade: "${esc(it.grade)}"`,
     `origin: "${esc(it.origin)}"`,
   );
+  if (it.kamisCategoryCode) {
+    parts.push(`kamisCategoryCode: "${esc(it.kamisCategoryCode)}"`);
+  }
   if (aliasParts.length) {
     parts.push(`aliases: { ${aliasParts.join(", ")} }`);
   }

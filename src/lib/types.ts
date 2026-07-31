@@ -117,6 +117,16 @@ export interface CatalogItem {
   /** 검증 근거 또는 미검증 사유 */
   verificationNote?: string;
 
+  /**
+   * KAMIS 부류코드 override.
+   *
+   * category는 **소비자 관점 분류**(채소/과일/수산)이고 KAMIS 부류는 다르다.
+   * 감자·고구마는 KAMIS에서 식량작물(100), 버섯류는 특용작물(300)이지만
+   * 장보기 맥락에서는 채소다. 화면 분류는 category를, 조회는 이 코드를 쓴다.
+   * 없으면 category에 대응하는 기본 부류코드를 쓴다.
+   */
+  kamisCategoryCode?: string;
+
   /** 상식 범위 밖 값을 걸러내기 위한 원/kg 밴드 (축 정합성 게이트) */
   plausiblePerKg?: { min: number; max: number };
 }

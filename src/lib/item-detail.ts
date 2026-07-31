@@ -108,7 +108,12 @@ export async function getItemDetail(
 
   const [garakSeries, kamisMap] = await Promise.all([
     fetchGarakHistory(q, today, 21),
-    fetchKamisPrices([base.category], today, kgPerConsumerUnitByName),
+    fetchKamisPrices(
+      [base.category],
+      today,
+      kgPerConsumerUnitByName,
+      base.kamisCategoryCode ? [base.kamisCategoryCode] : [],
+    ),
   ]);
 
   const k = lookupBySourceName(kamisMap, base);
