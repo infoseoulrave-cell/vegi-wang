@@ -100,6 +100,29 @@ export function PriceBoard({
         </div>
       )}
 
+      {/*
+        실측이 없으면 품목이 아예 빠진다(더미로 채우지 않으므로).
+        빈 격자를 백지로 두지 않고 왜 비었는지 밝힌다.
+      */}
+      {visible.length === 0 && (
+        <div className="rounded-2xl bg-white p-8 text-center ring-1 ring-black/5">
+          <p className="font-semibold">오늘 확인된 시세가 없습니다</p>
+          <p className="mt-2 text-sm leading-relaxed text-foreground/55">
+            {(lockedCategory ?? tab) === "수산" ? (
+              <>
+                수산은 산지 위판 데이터를 원천으로 씁니다. 아직 연동 준비 중이라
+                시세를 표시하지 않습니다 — 근거 없는 값을 보여주지 않기 위해서입니다.
+              </>
+            ) : (
+              <>
+                도매시장 휴장일이거나 수집이 아직 완료되지 않았습니다.
+                추정값을 만들지 않고 실측이 확인되면 표시합니다.
+              </>
+            )}
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((item) => {
           const meta = COMPASS_META[item.compass];
