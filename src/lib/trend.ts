@@ -56,7 +56,15 @@ export function analyzeTrend(
 export function buildTrendRecommendation(
   position: TrendPosition,
   retailGap?: "reasonable" | "normal" | "bubble",
+  basis: "series" | "baseline" | "none" = "series",
 ): string {
+  // 추세 근거가 없으면 추세를 말하지 않는다 — 거품 지표만 있으면 그것만 말한다
+  if (basis === "none") {
+    if (retailGap === "bubble") {
+      return "소매 거품이 큽니다 — 도매·직거래를 비교해 보세요. 시세 동향은 이력이 쌓이면 표시됩니다.";
+    }
+    return "오늘 실측 시세입니다. 시세 동향은 이력이 쌓이면 표시됩니다.";
+  }
   if (position === "high") {
     return "최근 동향 기준 고가권입니다 — 급하지 않다면 추이를 더 지켜보세요.";
   }

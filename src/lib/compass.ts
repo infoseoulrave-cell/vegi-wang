@@ -112,23 +112,48 @@ function toConsumerSeries(
  */
 export function withSignal(item: PriceItem): PriceItemWithSignal {
   const perKg = item.auctionPerKg;
-  const changeRate = pct(perKg, item.auctionPrevPerKg);
+
+  /*
+   * 비교는 **같은 원천끼리만** 한다.
+   *
+   * 예전에는 오늘값(가락)을 KAMIS 시계열의 어제값과 비교했다. 두 원천의
+   * 가격대가 다르므로(배추 실측: 가락 1,895 vs KAMIS 1,128) 시세가 그대로여도
+   * +68%가 찍힌다. 프로덕션에서 시금치 +218%·감귤 +192%가 그렇게 나온 값이다.
+   *
+   * 이제 호출측이 같은 원천 시계열과 전일값만 넘긴다. 넘어오지 않으면
+   * 지표를 만들지 않고 undefined로 두어 UI가 감춘다.
+   */
+  const changeRate =
+    item.auctionPrevPerKg != null && item.auctionPrevPerKg > 0
+      ? pct(perKg, item.auctionPrevPerKg)
+      : undefined;
 
   const history = normalizeSeries(item.history ?? []);
+  // 오늘 한 점만 있는 시계열은 추세가 아니다
+  const hasSeries = history.filter((p) => p.price > 0).length >= 2;
   const trend = analyzeTrend(history, perKg);
-  const baseline = item.auctionBaselinePerKg || trend.avg;
-  const deviationRate = pct(perKg, baseline);
-  const compass = history.length
+  const baseline = item.auctionBaselinePerKg || (hasSeries ? trend.avg : 0);
+  const deviationRate = baseline > 0 ? pct(perKg, baseline) : undefined;
+
+  const trendBasis: PriceItemWithSignal["trendBasis"] = hasSeries
+    ? "series"
+    : deviationRate != null
+      ? "baseline"
+      : "none";
+
+  const compass = hasSeries
     ? trendToCompass(trend.position)
-    : toCompass(deviationRate);
-  const trendPosition = history.length
+    : deviationRate != null
+      ? toCompass(deviationRate)
+      : "fair";
+  const trendPosition = hasSeries
     ? trend.position
     : compass === "cheap"
       ? "low"
       : compass === "expensive"
         ? "high"
         : "mid";
-  const trendPercentile = history.length
+  const trendPercentile = hasSeries
     ? trend.percentile
     : compass === "cheap"
       ? 20
@@ -158,15 +183,7 @@ export function withSignal(item: PriceItem): PriceItemWithSignal {
       ? Math.max(consumerRetailPrice - consumerAuctionPrice, 0)
       : undefined;
 
-  const chartSeries = toConsumerSeries(
-    history.length
-      ? history
-      : [
-          { date: "prev", price: item.auctionPrevPerKg, label: "전일" },
-          { date: "today", price: perKg, label: "오늘" },
-        ],
-    item.kgPerConsumerUnit,
-  );
+  const chartSeries = toConsumerSeries(history, item.kgPerConsumerUnit);
 
   return {
     ...item,
@@ -174,6 +191,7 @@ export function withSignal(item: PriceItem): PriceItemWithSignal {
     auctionBaselinePerKg: baseline,
     changeRate,
     deviationRate,
+    trendBasis,
     compass,
     trendPercentile,
     trendPosition,
@@ -185,6 +203,6 @@ export function withSignal(item: PriceItem): PriceItemWithSignal {
     consumerAuctionPrice,
     consumerRetailPrice,
     savingPerUnit,
-    recommendation: buildTrendRecommendation(trendPosition, retailGap),
+    recommendation: buildTrendRecommendation(trendPosition, retailGap, trendBasis),
   };
 }

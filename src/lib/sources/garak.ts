@@ -17,6 +17,13 @@ import { parseUnitKg } from "./unit";
 const JSON_ENDPOINT =
   "http://www.garak.co.kr/homepage/publicdata/dataJsonOpen.do";
 
+/**
+ * 소매 비교용 기준 등급.
+ * KAMIS 소매가는 '상품' 기준이므로 도매도 같은 등급으로 맞춰야
+ * 거품배수가 등급 차이를 가격 차이로 착각하지 않는다.
+ */
+export const PREFERRED_GRADE = /(특|상)/;
+
 /** 가락 청과 도매시장법인 코드 */
 export const GARAK_CORP_CODES = [
   "11000101", // 서울청과
@@ -203,7 +210,16 @@ export async function fetchGarakAuctionPerKg(
   if (all.length === 0) return null;
   // PUMMOK이 질의어와 정확히 일치하는 품목만 채택(예: "사과" 질의 시 "대추(사과대추)" 배제)
   const exact = all.filter((r) => r.pummok === query || r.pummok === itemName);
-  const perKgMap = aggregateByPummokPerKg(exact.length ? exact : all);
+  const scoped = exact.length ? exact : all;
+  /*
+   * 등급을 맞춘다. KAMIS 소매는 pickPreferredRows가 '상품'을 고르는데
+   * 여기서 특·상·중·하를 전부 평균내면 도매만 낮게 잡혀 거품배수가
+   * 구조적으로 과대평가된다. 상품 등급이 있으면 그것만 쓴다.
+   */
+  const preferred = scoped.filter((r) => PREFERRED_GRADE.test(r.grade));
+  const perKgMap = aggregateByPummokPerKg(
+    preferred.length ? preferred : scoped,
+  );
   const perKg = perKgMap.get(query) ?? perKgMap.get(itemName) ?? null;
   return perKg != null && perKg > 0 ? perKg : null;
 }

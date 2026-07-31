@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { ChangeRate } from "@/components/ChangeRate";
 import { CompassBadge, RetailGapBadge } from "@/components/CompassBadge";
 import { PriceSparkline } from "@/components/PriceSparkline";
 import { categoryHref } from "@/lib/categories";
@@ -117,20 +118,29 @@ export function PriceBoard({
                     </p>
                   </div>
                 </div>
-                <CompassBadge level={item.compass} />
+                {item.trendBasis !== "none" && (
+                  <CompassBadge level={item.compass} />
+                )}
               </div>
 
-              <div className="mt-4 rounded-xl bg-background/70 px-3 py-2 ring-1 ring-black/5">
-                <div className="mb-1 flex items-center justify-between">
-                  <p className="text-[11px] font-semibold text-foreground/55">
-                    최근 시세 동향
-                  </p>
-                  <p className="text-[11px] font-medium text-foreground/50">
-                    분위 {Math.round(item.trendPercentile)}% · {meta.label}
-                  </p>
+              {/* 추세 근거가 없으면 분위·스파크라인을 만들어내지 않는다 */}
+              {item.trendBasis === "series" ? (
+                <div className="mt-4 rounded-xl bg-background/70 px-3 py-2 ring-1 ring-black/5">
+                  <div className="mb-1 flex items-center justify-between">
+                    <p className="text-[11px] font-semibold text-foreground/55">
+                      최근 시세 동향
+                    </p>
+                    <p className="text-[11px] font-medium text-foreground/50">
+                      분위 {Math.round(item.trendPercentile)}% · {meta.label}
+                    </p>
+                  </div>
+                  <PriceSparkline series={item.chartSeries} />
                 </div>
-                <PriceSparkline series={item.chartSeries} />
-              </div>
+              ) : (
+                <div className="mt-4 rounded-xl bg-background/70 px-3 py-2 text-[11px] text-foreground/45 ring-1 ring-black/5">
+                  시세 동향은 이력이 쌓이면 표시됩니다
+                </div>
+              )}
 
               <div className="mt-4">
                 <p className="text-[11px] font-semibold text-brand-dark">
@@ -145,29 +155,20 @@ export function PriceBoard({
                   <p className="text-2xl font-extrabold tracking-tight">
                     {won(item.consumerAuctionPrice)}
                   </p>
-                  <p
-                    className={`text-sm font-semibold ${
-                      item.changeRate < 0
-                        ? "text-emerald-600"
-                        : item.changeRate > 0
-                          ? "text-rose-600"
-                          : "text-foreground/50"
-                    }`}
-                  >
-                    전일 {signedPct(item.changeRate)}
-                  </p>
+                  <ChangeRate value={item.changeRate} />
                 </div>
                 <p className="mt-0.5 text-xs text-foreground/50">
                   실제 경매 {item.auctionUnit} {won(item.auctionUnitPrice)}
-                  {baselineLabel(item.baselineMethod) && (
-                    <>
-                      {" · "}
-                      {baselineLabel(item.baselineMethod)}比{" "}
-                      <span className="font-semibold text-foreground/70">
-                        {signedPct(item.deviationRate)}
-                      </span>
-                    </>
-                  )}
+                  {item.deviationRate != null &&
+                    baselineLabel(item.baselineMethod) && (
+                      <>
+                        {" · "}
+                        {baselineLabel(item.baselineMethod)}比{" "}
+                        <span className="font-semibold text-foreground/70">
+                          {signedPct(item.deviationRate)}
+                        </span>
+                      </>
+                    )}
                 </p>
               </div>
 

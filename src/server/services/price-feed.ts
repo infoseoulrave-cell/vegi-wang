@@ -92,22 +92,21 @@ export async function getServedPriceFeed(
         fromDate,
         saleDate,
       );
+      // DB 이력은 전부 우리 수집분이라 같은 원천이다 — 비교에 안전하다
       history = dbHist.map((h) => ({
         date: h.saleDate,
         price: h.avgPricePerKg,
+        source: "db" as const,
       }));
     } catch {
       // memory 리포지 등 — 아래 폴백으로
     }
-    if (
-      sourceMarket === "garak" &&
-      history.length < 2 &&
-      k?.seriesPerKg?.length
-    ) {
-      history = normalizeSeries([...k.seriesPerKg, ...history]);
-    } else {
-      history = normalizeSeries(history);
-    }
+    /*
+     * 예전에는 DB 이력이 부족하면 KAMIS 시계열을 이어 붙였다. 그러면 오늘값
+     * (우리 수집분)과 어제값(KAMIS)의 원천이 달라 등락률이 원천 차이를 찍는다.
+     * DB 이력이 없으면 그냥 비운다 — 며칠만 지나면 자체 이력으로 채워진다.
+     */
+    history = normalizeSeries(history);
 
     const todayRow = dailyByItemId.get(base.id);
     const resolved = resolveWithCarryForward(
@@ -117,16 +116,14 @@ export async function getServedPriceFeed(
     );
     if (!resolved) continue; // 실측도 이월 대상도 없음 → 비노출
 
-    // 수산은 KAMIS 평년가(도매시장)를 위판가 기준선으로 쓸 수 없다.
+    /*
+     * 기준선도 같은 원천이어야 한다. DB 경로의 오늘값은 우리 수집분이므로
+     * KAMIS 평년가를 기준선으로 쓰면 원천 차이만큼 상수 편차가 얹힌다.
+     * 자체 기준선(item_baseline)이 없으면 기준선 없음으로 둔다.
+     */
     const own = baselineByItemId.get(base.id);
-    const kamisBaseline =
-      sourceMarket === "fish_market" ? undefined : k?.baselinePerKg;
-    const baselinePerKg = own?.avgPricePerKg ?? kamisBaseline ?? 0;
-    const baselineMethod: BaselineMethod = own
-      ? own.method
-      : kamisBaseline
-        ? "kamis_dpr7"
-        : "none";
+    const baselinePerKg = own?.avgPricePerKg ?? 0;
+    const baselineMethod: BaselineMethod = own ? own.method : "none";
 
     const prev = history
       .filter((p) => p.date < saleDate && p.price > 0)
@@ -135,11 +132,12 @@ export async function getServedPriceFeed(
     built.push({
       ...base,
       auctionPerKg: resolved.perKg,
-      auctionPrevPerKg: prev?.price ?? resolved.perKg,
+      auctionPrevPerKg: prev?.price,
       auctionBaselinePerKg: baselinePerKg,
       baselineMethod,
       retailPerKg: k?.retailPerKg,
       sourceMarket,
+      priceSource: "db",
       priceStatus: resolved.status,
       asOfDate: resolved.asOfDate,
       auctionUnit: todayRow?.unit || base.auctionUnit,
@@ -147,7 +145,7 @@ export async function getServedPriceFeed(
       origin: todayRow?.origin || base.origin,
       history: normalizeSeries([
         ...history,
-        { date: saleDate, price: resolved.perKg, label: "오늘" },
+        { date: saleDate, price: resolved.perKg, label: "오늘", source: "db" },
       ]),
     });
   }

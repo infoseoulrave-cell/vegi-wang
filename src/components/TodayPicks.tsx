@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { ChangeRate } from "@/components/ChangeRate";
 import { CompassBadge, RetailGapBadge } from "@/components/CompassBadge";
-import { signedPct, won } from "@/lib/format";
+import { won } from "@/lib/format";
 import type { TodayPick, TodayPickGroups } from "@/lib/consumer-picks";
 
 const KIND_TONE: Record<
@@ -45,17 +46,7 @@ function PickCard({ pick }: { pick: TodayPick }) {
           <p className="text-2xl font-extrabold">
             {won(item.consumerAuctionPrice)}
           </p>
-          <p
-            className={`text-sm font-semibold ${
-              item.changeRate < 0
-                ? "text-emerald-600"
-                : item.changeRate > 0
-                  ? "text-rose-600"
-                  : "text-foreground/45"
-            }`}
-          >
-            전일 {signedPct(item.changeRate)}
-          </p>
+          <ChangeRate value={item.changeRate} />
         </div>
         <div className="flex items-center justify-between rounded-xl bg-background/70 px-3 py-2 text-xs ring-1 ring-black/5">
           <span className="text-foreground/60">

@@ -113,31 +113,38 @@ export async function getItemDetail(
 
   const k = lookupBySourceName(kamisMap, base);
 
-  // 두 소스 모두 원/kg 축이므로 이제는 안전하게 합칠 수 있다.
-  // (예전에는 KAMIS dpr가 거래단위/포기/kg가 섞여 있어 섞으면 차트가 왜곡됐다.)
-  let auctionSeries = garakSeries;
-  let auctionHistory: ItemDetail["source"]["auctionHistory"] = garakSeries.length
+  /*
+   * 축은 둘 다 원/kg이지만 **원천이 다르면 섞지 않는다.**
+   * 가락과 KAMIS는 가격대가 달라(배추 실측 1,895 vs 1,128) 이어 붙이면
+   * 등락률과 분위가 시세가 아니라 원천 전환을 반영한다.
+   * 가락 이력이 있으면 가락만, 없으면 KAMIS만 쓴다.
+   */
+  const usingGarak = garakSeries.length > 0;
+  let auctionSeries = usingGarak
+    ? garakSeries.map((p) => ({ ...p, source: "garak" as const }))
+    : normalizeSeries(
+        (k?.seriesPerKg ?? []).map((p) => ({ ...p, source: "kamis" as const })),
+      );
+  const auctionHistory: ItemDetail["source"]["auctionHistory"] = usingGarak
     ? "garak"
-    : "none";
-
-  if (garakSeries.length < 3 && k?.seriesPerKg?.length) {
-    auctionSeries = normalizeSeries([...k.seriesPerKg, ...garakSeries]);
-    auctionHistory = garakSeries.length ? "mixed" : "kamis";
-  }
+    : auctionSeries.length
+      ? "kamis"
+      : "none";
+  const priceSource = usingGarak ? "garak" : "kamis";
 
   const todayPerKg =
     auctionSeries.filter((p) => p.date === today).at(-1)?.price ?? null;
   const resolved = resolveWithCarryForward(todayPerKg, auctionSeries, today);
   if (!resolved) return null;
 
-  const prevPerKg =
-    [...auctionSeries].reverse().find((p) => p.date < today)?.price ??
-    resolved.perKg;
+  const prevPerKg = [...auctionSeries]
+    .reverse()
+    .find((p) => p.date < today)?.price;
 
   if (!auctionSeries.some((p) => p.date === today)) {
     auctionSeries = normalizeSeries([
       ...auctionSeries,
-      { date: today, price: resolved.perKg, label: "오늘" },
+      { date: today, price: resolved.perKg, label: "오늘", source: priceSource },
     ]);
   }
 
@@ -145,10 +152,12 @@ export async function getItemDetail(
     ...base,
     auctionPerKg: resolved.perKg,
     auctionPrevPerKg: prevPerKg,
-    auctionBaselinePerKg: k?.baselinePerKg ?? 0,
-    baselineMethod: k?.baselinePerKg ? "kamis_dpr7" : "none",
+    // 기준선도 같은 원천일 때만 (KAMIS 평년가는 KAMIS 값과만 비교 가능)
+    auctionBaselinePerKg: usingGarak ? 0 : (k?.baselinePerKg ?? 0),
+    baselineMethod: !usingGarak && k?.baselinePerKg ? "kamis_dpr7" : "none",
     retailPerKg: k?.retailPerKg,
     sourceMarket: sourceMarketFor(base),
+    priceSource,
     priceStatus: resolved.status,
     asOfDate: resolved.asOfDate,
     history: auctionSeries,
@@ -171,11 +180,14 @@ export async function getItemDetail(
     },
     stats: {
       latest: signal.consumerAuctionPrice,
-      prev: Math.round(prevPerKg * base.kgPerConsumerUnit),
+      prev:
+        prevPerKg != null
+          ? Math.round(prevPerKg * base.kgPerConsumerUnit)
+          : signal.consumerAuctionPrice,
       high: values.length ? Math.max(...values) : signal.consumerAuctionPrice,
       low: values.length ? Math.min(...values) : signal.consumerAuctionPrice,
       avg: trend.avg || signal.consumerAuctionPrice,
-      changeRate: signal.changeRate,
+      changeRate: signal.changeRate ?? 0,
       trendPercentile: signal.trendPercentile,
     },
   };

@@ -82,6 +82,51 @@ describe("withSignal (최근 동향 포지션)", () => {
     expect(s.compass).toBe("cheap");
   });
 
+  /**
+   * 원천 혼입 회귀 방지.
+   *
+   * 예전에는 오늘값(가락)을 KAMIS 시계열의 어제값과 비교해 등락률을 만들었다.
+   * 두 원천의 가격대가 달라(배추 실측 1,895 vs 1,128) 시세가 그대로여도
+   * +68%가 찍혔다. 프로덕션 시금치 +218%·감귤 +192%가 그 결과다.
+   */
+  it("같은 원천 전일값이 없으면 등락률을 만들지 않는다", () => {
+    const s = withSignal({ ...cabbage, auctionPrevPerKg: undefined });
+    expect(s.changeRate).toBeUndefined();
+  });
+
+  it("전일값이 있으면 등락률을 낸다", () => {
+    const s = withSignal({ ...cabbage, auctionPrevPerKg: 1000 });
+    expect(s.changeRate).toBe(-10);
+  });
+
+  it("기준선이 없으면 편차율도 만들지 않는다", () => {
+    const s = withSignal({
+      ...cabbage,
+      auctionBaselinePerKg: 0,
+      baselineMethod: "none",
+      history: [],
+    });
+    expect(s.deviationRate).toBeUndefined();
+    expect(s.trendBasis).toBe("none");
+  });
+
+  it("오늘 한 점뿐이면 추세로 치지 않는다", () => {
+    const s = withSignal({
+      ...cabbage,
+      auctionBaselinePerKg: 0,
+      baselineMethod: "none",
+      history: [{ date: "2026-07-31", price: 900, label: "오늘" }],
+    });
+    expect(s.trendBasis).toBe("none");
+    expect(s.recommendation).toContain("이력이 쌓이면");
+  });
+
+  it("시계열이 2점 이상이면 분위 기반 추세를 쓴다", () => {
+    const s = withSignal(cabbage);
+    expect(s.trendBasis).toBe("series");
+    expect(s.trendPosition).toBe("low");
+  });
+
   it("이월 상태와 기준일을 그대로 전달한다", () => {
     const s = withSignal({
       ...cabbage,

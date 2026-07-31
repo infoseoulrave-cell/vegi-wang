@@ -47,6 +47,12 @@ export type BaselineMethod =
   | "seasonal" // 전년 동시기 혼합
   | "none"; // 기준선 없음
 
+/**
+ * 가격 원천 식별자.
+ * 비교(전일대비·동향·편차)는 **같은 원천끼리만** 유효하다.
+ */
+export type PriceSource = "at" | "garak" | "kamis" | "fish_market" | "db";
+
 /** 가격 시계열 한 점 (그래프용) — **항상 원/kg 축** */
 export interface PricePoint {
   /** YYYY-MM-DD (추정 포함) */
@@ -55,7 +61,17 @@ export interface PricePoint {
   price: number;
   /** 표시용 짧은 라벨 (예: 1주전) */
   label?: string;
+  /** 이 값의 원천. 다른 원천끼리 비교하면 안 된다. */
+  source?: PriceSource;
 }
+
+/**
+ * 추세·편차 지표를 무엇에 근거해 냈는지.
+ * - series   : 같은 원천 시계열 안에서 분위 계산 (신뢰 가능)
+ * - baseline : 시계열은 없고 기준선 대비 편차만 (약함)
+ * - none     : 근거 없음 → UI가 지표를 감춘다
+ */
+export type TrendBasis = "series" | "baseline" | "none";
 
 /**
  * 품목 카탈로그 항목 — **가격을 담지 않는다**.
@@ -112,8 +128,13 @@ export interface CatalogItem {
 export interface PriceItem extends CatalogItem {
   /** [경락] 기준일 경락 평균가 (원/kg) */
   auctionPerKg: number;
-  /** [경락] 직전 영업일 경락 평균가 (원/kg) */
-  auctionPrevPerKg: number;
+  /**
+   * [경락] 직전 영업일 경락 평균가 (원/kg).
+   * **오늘값과 같은 원천일 때만** 채운다. 원천이 다르면 undefined —
+   * 가락 오늘값을 KAMIS 어제값과 비교하면 시세 변동이 아니라
+   * 원천 차이가 등락률로 찍힌다 (배추 실측 기준 +68%).
+   */
+  auctionPrevPerKg?: number;
   /** 기준선 (원/kg) */
   auctionBaselinePerKg: number;
   /** 기준선 산출 근거 */
@@ -124,6 +145,8 @@ export interface PriceItem extends CatalogItem {
 
   /** 이 경락가가 어느 시장에서 왔는지 */
   sourceMarket: PriceSourceMarket;
+  /** 오늘 경락가를 준 원천 — 비교 가능 여부 판정에 쓴다 */
+  priceSource?: PriceSource;
 
   /** 경락가 신선도 */
   priceStatus: PriceStatus;
@@ -135,10 +158,12 @@ export interface PriceItem extends CatalogItem {
 }
 
 export interface PriceItemWithSignal extends PriceItem {
-  /** 전일 대비 경락가 등락률 (%) */
-  changeRate: number;
-  /** 기준선 대비 편차율 (%) */
-  deviationRate: number;
+  /** 전일 대비 경락가 등락률 (%). 같은 원천 전일값이 없으면 undefined */
+  changeRate?: number;
+  /** 기준선 대비 편차율 (%). 근거가 없으면 undefined */
+  deviationRate?: number;
+  /** 지표 근거 — none이면 UI가 동향 배지를 감춘다 */
+  trendBasis: TrendBasis;
   /** 최근 동향 포지션 신호 (저가/중위/고가) */
   compass: CompassLevel;
   /** 최근 시세 창 분위(0~100) */

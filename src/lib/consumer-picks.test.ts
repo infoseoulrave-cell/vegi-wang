@@ -8,7 +8,7 @@ import {
   totalBasketSaving,
   watchScore,
 } from "./consumer-picks";
-import { isProcessedItem } from "./catalog-focus";
+import { isProcessedSourceName } from "./catalog-focus";
 import type { PriceItem } from "./types";
 
 function item(
@@ -208,7 +208,10 @@ describe("buildSavingsBasket", () => {
       ],
     });
 
-    expect(isProcessedItem("sea-salt")).toBe(true);
+    // 가공식품은 카탈로그에서 이미 빠졌고, 방어선은 원천 품목명 기준으로 남는다
+    expect(isProcessedSourceName("천일염")).toBe(true);
+    expect(isProcessedSourceName("고춧가루")).toBe(true);
+    expect(isProcessedSourceName("배추")).toBe(false);
     expect(bubble.retailGap).toBe("bubble");
 
     const basket = buildSavingsBasket([bubble, fair, mid, processed], 8);

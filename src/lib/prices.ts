@@ -20,6 +20,7 @@ import {
   type PriceFeed,
   type PriceItem,
   type PricePoint,
+  type PriceSource,
   type PriceSourceMarket,
 } from "./types";
 
@@ -141,16 +142,19 @@ export function resolveWithCarryForward(
   return { perKg: latest.price, status: "carried", asOfDate: latest.date };
 }
 
-/** 직전 영업일 값 — 없으면 오늘 값(등락률 0) */
+/**
+ * 직전 영업일 값. **없으면 undefined** — 오늘 값으로 대체하지 않는다.
+ * 예전에는 fallback으로 오늘 값을 넣어 등락률 0%를 만들었는데,
+ * "변동 없음"과 "전일 데이터 없음"은 다른 사실이다.
+ */
 function prevFromSeries(
   series: PricePoint[],
   todayISO: string,
-  fallback: number,
-): number {
+): number | undefined {
   const older = series
     .filter((p) => p.date < todayISO && p.price > 0)
     .sort((a, b) => b.date.localeCompare(a.date));
-  return older[0]?.price ?? fallback;
+  return older[0]?.price;
 }
 
 async function fetchGarakPerKgMap(
@@ -209,21 +213,30 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
     const sourceMarket = sourceMarketFor(base);
 
     /*
-     * KAMIS 도매 시계열은 **도매시장** 가격이다. 수산의 오늘값은 **산지 위판가**라
-     * 유통 단계가 한 칸 다르다. 둘 다 원/kg 축이어도 섞으면 추세가 왜곡되므로
-     * (산지가 대체로 낮아 항상 '고가권'으로 보임) 수산은 경락 축 이력을 비운다.
-     * 자체 위판 이력은 DB가 쌓이면서 채워진다.
+     * KAMIS 시계열은 KAMIS 원천이다. 오늘값이 가락/aT에서 왔다면 이 시계열과
+     * 비교할 수 없다 — 가격대가 달라 시세가 그대로여도 등락률이 크게 찍힌다
+     * (배추 실측: 가락 1,895 vs KAMIS 1,128 → +68%).
+     * 수산은 산지 위판가라 도매시장 시계열과는 유통 단계까지 다르다.
+     *
+     * 그래서 시계열은 일단 KAMIS 것으로 두되, **오늘값도 KAMIS에서 왔을 때만**
+     * 비교에 쓴다. 아래에서 원천을 확정한 뒤 걸러낸다.
      */
-    const series =
+    const kamisSeries =
       sourceMarket === "fish_market"
         ? []
-        : normalizeSeries(k?.seriesPerKg ?? []);
+        : normalizeSeries(
+            (k?.seriesPerKg ?? []).map((p) => ({
+              ...p,
+              source: "kamis" as const,
+            })),
+          );
 
     const kamisToday =
-      series.filter((p) => p.date === todayISO).at(-1)?.price ?? null;
+      kamisSeries.filter((p) => p.date === todayISO).at(-1)?.price ?? null;
 
     let todayPerKg: number | null;
     let axisError: string | null;
+    let priceSource: PriceSource | undefined;
 
     if (sourceMarket === "fish_market") {
       // 위판장은 금액÷중량이라 축이 자기완결적이다. 상식 범위 게이트는
@@ -234,13 +247,24 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
       );
       todayPerKg = fish && !fish.rejected ? fish.perKg : null;
       axisError = fish?.rejected ?? null;
+      priceSource = todayPerKg != null ? "fish_market" : undefined;
     } else {
       const at = lookupBySourceName(atMap, base);
+      const garak = garakMap.get(base.id) ?? null;
       ({ perKg: todayPerKg, rejected: axisError } = resolveAuctionPerKg(
-        garakMap.get(base.id),
+        garak,
         kamisToday,
         at?.perKg ?? null,
       ));
+      // 어느 원천이 채택됐는지 — 비교 가능 여부를 여기서 결정한다
+      if (todayPerKg != null) {
+        priceSource =
+          at?.perKg === todayPerKg
+            ? "at"
+            : garak === todayPerKg
+              ? "garak"
+              : "kamis";
+      }
     }
 
     if (axisError) {
@@ -248,8 +272,14 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
       continue;
     }
 
+    // 오늘값과 원천이 같은 시계열만 비교에 쓴다
+    const series =
+      priceSource === "kamis" || todayPerKg == null ? kamisSeries : [];
+
     const resolved = resolveWithCarryForward(todayPerKg, series, todayISO);
     if (!resolved) continue; // 실측 없음 → 비노출
+    // 이월이면 원천은 시계열(KAMIS) 쪽이다
+    if (resolved.status === "carried") priceSource = "kamis";
 
     const bandError = checkPlausible(base, resolved.perKg);
     if (bandError) {
@@ -262,25 +292,31 @@ export async function getPriceFeed(dateISO?: string): Promise<PriceFeed> {
 
     const history = normalizeSeries([
       ...series,
-      { date: todayISO, price: resolved.perKg, label: "오늘" },
+      {
+        date: todayISO,
+        price: resolved.perKg,
+        label: "오늘",
+        source: priceSource,
+      },
     ]);
 
     items.push({
       ...base,
       auctionPerKg: resolved.perKg,
-      auctionPrevPerKg: prevFromSeries(series, todayISO, resolved.perKg),
-      // 수산은 KAMIS 평년가(도매시장)를 위판가의 기준선으로 쓸 수 없다.
-      // 기준선 없음을 명시하면 UI가 편차 문구를 숨긴다.
+      // 같은 원천 전일값이 없으면 등락률을 만들지 않는다
+      auctionPrevPerKg: prevFromSeries(series, todayISO),
+      /*
+       * KAMIS 평년가(dpr7)는 KAMIS 원천이다. 오늘값이 가락/aT에서 왔다면
+       * 기준선으로 쓸 수 없다 — 모든 품목에 원천 차이만큼의 상수 편차가 얹힌다.
+       * 자체 이력이 쌓이면 DB 경로가 같은 원천 기준선을 준다.
+       */
       auctionBaselinePerKg:
-        sourceMarket === "fish_market" ? 0 : (k?.baselinePerKg ?? 0),
+        priceSource === "kamis" ? (k?.baselinePerKg ?? 0) : 0,
       baselineMethod:
-        sourceMarket === "fish_market"
-          ? "none"
-          : k?.baselinePerKg
-            ? "kamis_dpr7"
-            : "none",
+        priceSource === "kamis" && k?.baselinePerKg ? "kamis_dpr7" : "none",
       retailPerKg: k?.retailPerKg,
       sourceMarket,
+      priceSource,
       priceStatus: resolved.status,
       asOfDate: resolved.asOfDate,
       history,
