@@ -27,6 +27,22 @@ const KAMIS_ALIASES = {
   "대파": ["파"],
 };
 
+/**
+ * 해수부 위판 표준코드명(mprcStdCodeNm) 별칭 후보.
+ *
+ * 매칭 실패는 "값이 틀림"이 아니라 "품목이 안 보임"으로 끝나므로 안전하다.
+ * 실제 코드명은 `/api/debug/fish-market`이 내려주는 목록으로 확정한다.
+ */
+const FISH_ALIASES = {
+  "물오징어": ["오징어", "살오징어"],
+  "조기": ["참조기"],
+  "꽃게": ["꽃게"],
+  "새우": ["흰다리새우", "대하"],
+};
+
+/** 국내 산지 위판 원천이 없는 품목 (수입산 등) */
+const NO_DOMESTIC_LANDING = new Set(["수입조기"]);
+
 function parseUnitKg(unit) {
   if (!unit) return null;
   const kg = unit.match(/([\d.]+)\s*kg/i);
@@ -110,7 +126,43 @@ for (const item of items) {
   const problems = [];
   const evidence = [];
 
-  if (!row) {
+  const isSeafood = item.category === "수산";
+
+  if (isSeafood) {
+    /*
+     * 수산의 원/kg 원천은 해수부 위판장이다.
+     * csmtAmount(금액) ÷ csmtWt(중량)이므로 거래단위 문자열을 파싱할 필요가
+     * 없고, 따라서 KAMIS 도매 단위와 weightKg를 대조할 이유도 없다.
+     * weightKg는 "실제 경매 N kg 얼마" 표시에만 쓰인다.
+     */
+    if (NO_DOMESTIC_LANDING.has(item.name)) {
+      problems.push(
+        "국내 산지 위판 원천 없음 (수입산) — 위판장 API로 커버되지 않는다",
+      );
+    } else {
+      evidence.push(
+        "해수부 위판장이 금액÷중량으로 원/kg를 직접 제공 — 거래단위 환산 불필요",
+      );
+      const fishAlias = FISH_ALIASES[item.name];
+      if (fishAlias) {
+        evidence.push(`위판 표준코드명 후보 ${fishAlias.map((a) => `"${a}"`).join(", ")}`);
+      }
+    }
+    if (row?.hasRetail) {
+      const retailKg = parseUnitKg(row.retailUnit);
+      if (retailKg != null) {
+        evidence.push(`KAMIS 소매 단위 "${row.retailUnit}" 중량 기반 — 원/kg 환산 가능`);
+      } else if (item.kgPerConsumerUnit > 0) {
+        evidence.push(
+          `KAMIS 소매 단위 "${row.retailUnit}"는 개수 기반 — 카탈로그 ${item.kgPerConsumerUnit}kg/${item.consumerUnit}로 환산`,
+        );
+      } else {
+        problems.push(
+          `KAMIS 소매 단위 "${row.retailUnit}" 환산 근거 없음 (kgPerConsumerUnit 미설정)`,
+        );
+      }
+    }
+  } else if (!row) {
     problems.push("KAMIS 품목 목록에 없음 — 별칭 선언 또는 카탈로그 제외 필요");
   } else {
     if (matchedAs !== item.name) evidence.push(`KAMIS 품목명 "${matchedAs}"로 매칭`);
@@ -166,7 +218,15 @@ const esc = (s) => String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 function serialize(r) {
   const it = r.item;
   const note = r.ok ? r.evidence.join(" / ") : r.problems.join(" / ");
-  const aliases = KAMIS_ALIASES[it.name];
+  const kamisAlias = KAMIS_ALIASES[it.name];
+  const fishAlias = it.category === "수산" ? FISH_ALIASES[it.name] : null;
+  const aliasParts = [];
+  if (kamisAlias) {
+    aliasParts.push(`kamis: [${kamisAlias.map((a) => `"${esc(a)}"`).join(", ")}]`);
+  }
+  if (fishAlias) {
+    aliasParts.push(`fishMarket: [${fishAlias.map((a) => `"${esc(a)}"`).join(", ")}]`);
+  }
   const parts = [
     `id: "${esc(it.id)}"`,
     `name: "${esc(it.name)}"`,
@@ -181,10 +241,8 @@ function serialize(r) {
     `grade: "${esc(it.grade)}"`,
     `origin: "${esc(it.origin)}"`,
   );
-  if (aliases) {
-    parts.push(
-      `aliases: { kamis: [${aliases.map((a) => `"${esc(a)}"`).join(", ")}] }`,
-    );
+  if (aliasParts.length) {
+    parts.push(`aliases: { ${aliasParts.join(", ")} }`);
   }
   parts.push(
     `unitVerified: ${r.ok}`,

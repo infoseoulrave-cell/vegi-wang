@@ -2,9 +2,11 @@ import {
   kgPerConsumerUnitByName,
   lookupBySourceName,
   servableCatalog,
+  sourceMarketFor,
 } from "@/lib/catalog";
 import { withSignal } from "@/lib/compass";
 import {
+  buildMarketLabel,
   CARRY_FORWARD_DAYS,
   getPriceFeed as getLivePriceFeed,
   resolveWithCarryForward,
@@ -21,7 +23,7 @@ import { getEnv } from "@/server/config/env";
 import { addDaysISO, todayKST } from "@/server/domain/date";
 import type { DailyItemPrice } from "@/server/domain/models";
 import type { Repositories } from "@/server/repos/types";
-import { seedCatalog } from "@/server/services/catalog";
+import { FISH_MARKET, seedCatalog } from "@/server/services/catalog";
 
 /**
  * DB에 최근 daily_item_price가 있으면 DB로 피드를 구성한다.
@@ -40,18 +42,24 @@ export async function getServedPriceFeed(
 
   await seedCatalog(repos);
 
-  const daily = await repos.auction.getDaily(marketCode, saleDate);
+  // 청과(가락)와 수산(위판장)은 시장 코드가 다르다 — 둘 다 읽는다.
+  const [garakDaily, fishDaily] = await Promise.all([
+    repos.auction.getDaily(marketCode, saleDate),
+    repos.auction.getDaily(FISH_MARKET.code, saleDate),
+  ]);
+  const daily = [...garakDaily, ...fishDaily];
   if (!daily.length) {
     const live = await getLivePriceFeed(saleDate);
     return { ...live, storage: "live" };
   }
 
-  const baselines = await repos.auction.listBaselines(
-    marketCode,
-    saleDate,
-    windowDays,
+  const [garakBaselines, fishBaselines] = await Promise.all([
+    repos.auction.listBaselines(marketCode, saleDate, windowDays),
+    repos.auction.listBaselines(FISH_MARKET.code, saleDate, windowDays),
+  ]);
+  const baselineByItemId = new Map(
+    [...garakBaselines, ...fishBaselines].map((b) => [b.itemId, b]),
   );
-  const baselineByItemId = new Map(baselines.map((b) => [b.itemId, b]));
 
   const kamis = await fetchKamisPrices(
     ["채소", "과일", "수산"],
@@ -69,13 +77,17 @@ export async function getServedPriceFeed(
 
   for (const base of catalog) {
     const k = lookupBySourceName(kamis, base);
+    const sourceMarket = sourceMarketFor(base);
+    const itemMarketCode =
+      sourceMarket === "fish_market" ? FISH_MARKET.code : marketCode;
     if (k?.retailPerKg) retailLive = true;
 
-    // 자체 이력 우선 — 없으면 KAMIS 시리즈로 부트스트랩. 둘 다 원/kg 축이다.
+    // 자체 이력 우선. 청과만 KAMIS 시리즈로 부트스트랩한다 —
+    // 수산의 KAMIS 도매는 도매시장 가격이라 산지 위판가와 유통 단계가 다르다.
     let history: PricePoint[] = [];
     try {
       const dbHist = await repos.auction.getDailyByItem(
-        marketCode,
+        itemMarketCode,
         base.name,
         fromDate,
         saleDate,
@@ -85,9 +97,13 @@ export async function getServedPriceFeed(
         price: h.avgPricePerKg,
       }));
     } catch {
-      // memory 리포지 등 — KAMIS 시리즈로 대체
+      // memory 리포지 등 — 아래 폴백으로
     }
-    if (history.length < 2 && k?.seriesPerKg?.length) {
+    if (
+      sourceMarket === "garak" &&
+      history.length < 2 &&
+      k?.seriesPerKg?.length
+    ) {
       history = normalizeSeries([...k.seriesPerKg, ...history]);
     } else {
       history = normalizeSeries(history);
@@ -101,11 +117,14 @@ export async function getServedPriceFeed(
     );
     if (!resolved) continue; // 실측도 이월 대상도 없음 → 비노출
 
+    // 수산은 KAMIS 평년가(도매시장)를 위판가 기준선으로 쓸 수 없다.
     const own = baselineByItemId.get(base.id);
-    const baselinePerKg = own?.avgPricePerKg ?? k?.baselinePerKg ?? 0;
+    const kamisBaseline =
+      sourceMarket === "fish_market" ? undefined : k?.baselinePerKg;
+    const baselinePerKg = own?.avgPricePerKg ?? kamisBaseline ?? 0;
     const baselineMethod: BaselineMethod = own
       ? own.method
-      : k?.baselinePerKg
+      : kamisBaseline
         ? "kamis_dpr7"
         : "none";
 
@@ -120,6 +139,7 @@ export async function getServedPriceFeed(
       auctionBaselinePerKg: baselinePerKg,
       baselineMethod,
       retailPerKg: k?.retailPerKg,
+      sourceMarket,
       priceStatus: resolved.status,
       asOfDate: resolved.asOfDate,
       auctionUnit: todayRow?.unit || base.auctionUnit,
@@ -134,7 +154,7 @@ export async function getServedPriceFeed(
 
   return {
     date: saleDate,
-    market: "서울 가락동 농수산물도매시장",
+    market: buildMarketLabel(built),
     auctionSource: "live",
     retailSource: retailLive ? "live" : "sample",
     items: built.map(withSignal),

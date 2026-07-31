@@ -4,6 +4,7 @@ import {
   itemQueryName,
   kgPerConsumerUnitByName,
   lookupBySourceName,
+  sourceMarketFor,
 } from "@/lib/catalog";
 import { withSignal } from "@/lib/compass";
 import { resolveWithCarryForward } from "@/lib/prices";
@@ -147,6 +148,7 @@ export async function getItemDetail(
     auctionBaselinePerKg: k?.baselinePerKg ?? 0,
     baselineMethod: k?.baselinePerKg ? "kamis_dpr7" : "none",
     retailPerKg: k?.retailPerKg,
+    sourceMarket: sourceMarketFor(base),
     priceStatus: resolved.status,
     asOfDate: resolved.asOfDate,
     history: auctionSeries,

@@ -14,7 +14,11 @@ import {
   signedPct,
   won,
 } from "@/lib/format";
-import type { PriceItemWithSignal, ProduceCategory } from "@/lib/types";
+import {
+  SOURCE_MARKET_SHORT,
+  type PriceItemWithSignal,
+  type ProduceCategory,
+} from "@/lib/types";
 
 const TABS: Array<{ key: ProduceCategory | "전체"; label: string }> = [
   { key: "전체", label: "전체" },
@@ -130,7 +134,7 @@ export function PriceBoard({
 
               <div className="mt-4">
                 <p className="text-[11px] font-semibold text-brand-dark">
-                  {item.consumerUnit} 도매가 (가락 경락가 기준)
+                  {item.consumerUnit} 도매가 ({SOURCE_MARKET_SHORT[item.sourceMarket]} 기준)
                   {priceStatusLabel(item.priceStatus, item.asOfDate) && (
                     <span className="ml-1.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20">
                       {priceStatusLabel(item.priceStatus, item.asOfDate)}

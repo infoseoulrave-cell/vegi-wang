@@ -23,14 +23,24 @@ This version has breaking changes — APIs, conventions, and file structure may 
 2. **KAMIS dpr 슬롯은 축이 섞여 있다.** `p_convert_kg_yn=Y`는 **중량 기반 단위의 dpr1~dpr4만**
    원/kg로 바꾼다. dpr5·dpr6·dpr7과 개수 기반 단위("1포기","10개")는 변환되지 않는다.
    반드시 `resolveKamisPerKg(slot, value, unit, kgPerPiece)`를 거칠 것. 회귀 테스트는 `kamis.test.ts`.
-3. **경락가의 유일한 원천은 가락**이다. 행마다 UUN을 주므로 자기완결적 환산이 된다.
-   KAMIS 도매는 교차검증·부트스트랩 전용. 주 원천으로 쓰면 안 된다.
+3. **경락가 원천은 카테고리마다 다르다.** `sourceMarketFor(item)`이 정한다.
+   - 청과 → **가락**: 행마다 UUN을 주므로 자기완결적 환산.
+   - 수산 → **해수부 위판장**(15056856): `csmtAmount ÷ csmtWt`로 원/kg를 직접 얻는다.
+     단위 문자열을 파싱하지 않으므로 가락보다도 안전하다. 원문 단가(`csmtUntpc`)는
+     상자/마리 기준이 섞여 있어 **대표값으로 쓰면 안 된다** — 교차검증용이다.
+   KAMIS 도매는 청과 교차검증·부트스트랩 전용. 주 원천으로 쓰면 안 된다.
+   수산에는 KAMIS 도매 시계열·평년가를 **쓰지 않는다** — 도매시장가와 산지 위판가는
+   유통 단계가 달라 섞으면 추세가 왜곡된다.
 4. **추정 금지.** 환산 근거(단위 문자열 또는 검증된 카탈로그 중량)가 없으면 `null`을 반환한다.
    1kg으로 가정하거나 샘플값으로 채우지 않는다. 하드코딩 가격 더미는 전량 제거됐다.
 5. **검증된 품목만 노출.** `servableCatalog()`(= `unitVerified: true`)만 서빙한다.
-   판정: `node scripts/verify-catalog.mjs` → `docs/CATALOG_VERIFICATION.md` (현재 47/56 통과).
+   판정: `npm run catalog:verify` → `docs/CATALOG_VERIFICATION.md` (현재 53/56 통과).
 6. **결측은 이월 7일 + 날짜 라벨, 그 밖은 비노출.** `priceStatus`/`asOfDate`를 UI에서 반드시 표시.
 7. **기준선은 근거를 밝힌다.** `baselineMethod`(`kamis_dpr7`/`moving_avg_30`/`seasonal`).
    자체 이력이 14일 미만이면 이동평균인 척하지 않는다(`MIN_BASELINE_SAMPLE_DAYS`).
 
-진단: `/api/debug/price-axis` — 품목별 두 소스의 원/kg를 나란히 덤프. 축이 어긋나면 여기서 먼저 보인다.
+진단:
+- `/api/debug/price-axis` — 품목별 소스별 원/kg를 나란히 덤프. 축이 어긋나면 여기서 먼저 보인다.
+- `/api/debug/fish-market` — 위판장 축 확정용. `DATA_GO_KR_SERVICE_KEY`가 붙는 순간
+  ① `csmtWt`가 kg인지 ② `csmtUntpc`가 원/kg인지 ③ 품목명이 매칭되는지를 확인하고,
+  셋 다 통과하면 `fishMarket.ts`의 "미검증" 주석을 지운다.

@@ -306,10 +306,11 @@ class PgCatalogRepo implements CatalogRepository {
       await this.sql`
         INSERT INTO items (
           id, name, category, auction_unit, weight_kg, default_grade, default_origin,
-          is_active, unit_verified
+          is_active, unit_verified, source_market
         ) VALUES (
           ${i.id}, ${i.name}, ${i.category}, ${i.auctionUnit}, ${i.weightKg},
-          ${i.defaultGrade}, ${i.defaultOrigin}, ${i.isActive}, ${i.unitVerified}
+          ${i.defaultGrade}, ${i.defaultOrigin}, ${i.isActive}, ${i.unitVerified},
+          ${i.sourceMarket}
         )
         ON CONFLICT (id) DO UPDATE SET
           name = EXCLUDED.name,
@@ -320,6 +321,7 @@ class PgCatalogRepo implements CatalogRepository {
           default_origin = EXCLUDED.default_origin,
           is_active = EXCLUDED.is_active,
           unit_verified = EXCLUDED.unit_verified,
+          source_market = EXCLUDED.source_market,
           updated_at = NOW()
       `;
       n += 1;
@@ -330,7 +332,7 @@ class PgCatalogRepo implements CatalogRepository {
   async listItems(): Promise<ItemMaster[]> {
     const rows = await this.sql`
       SELECT id, name, category, auction_unit, weight_kg, default_grade, default_origin,
-             is_active, unit_verified
+             is_active, unit_verified, source_market
       FROM items WHERE is_active = TRUE
     `;
     return rows.map((r) => ({
@@ -343,6 +345,7 @@ class PgCatalogRepo implements CatalogRepository {
       defaultOrigin: r.default_origin == null ? null : String(r.default_origin),
       isActive: Boolean(r.is_active),
       unitVerified: Boolean(r.unit_verified),
+      sourceMarket: (r.source_market as ItemMaster["sourceMarket"]) ?? "garak",
     }));
   }
 

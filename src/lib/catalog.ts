@@ -33,8 +33,19 @@ export function itemLookupNames(item: CatalogItem): string[] {
     itemQueryName(item),
     ...(item.aliases?.kamis ?? []),
     ...(item.aliases?.garak ?? []),
+    ...(item.aliases?.fishMarket ?? []),
   ];
   return [...new Set(names.filter(Boolean))];
+}
+
+/**
+ * 경락가 원천이 어느 시장인가.
+ *
+ * 가락은 청과 6개 법인만 조회하므로 수산 경락가가 없다. 수산은 해수부
+ * 위판장(산지 위탁판매)이 원천이고, 금액÷중량으로 원/kg가 바로 나온다.
+ */
+export function sourceMarketFor(item: CatalogItem): "garak" | "fish_market" {
+  return item.category === "수산" ? "fish_market" : "garak";
 }
 
 /**

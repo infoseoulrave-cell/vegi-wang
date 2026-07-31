@@ -2,8 +2,11 @@ import { NextResponse } from "next/server";
 import {
   itemQueryName,
   kgPerConsumerUnitByName,
+  lookupBySourceName,
   servableCatalog,
+  sourceMarketFor,
 } from "@/lib/catalog";
+import { fetchFishMarketPerKg } from "@/lib/sources/fishMarket";
 import { fetchGarakAuctionPerKg } from "@/lib/sources/garak";
 import { fetchKamisPrices } from "@/lib/sources/kamis";
 import { resolveAuctionPerKg } from "@/lib/prices";
@@ -30,23 +33,31 @@ export async function GET(req: Request) {
   const catalog = servableCatalog();
   const targets = limitParam > 0 ? catalog.slice(0, limitParam) : catalog;
 
-  const kamis = await fetchKamisPrices(
-    ["채소", "과일", "수산"],
-    date,
-    kgPerConsumerUnitByName,
-  );
+  const [kamis, fish] = await Promise.all([
+    fetchKamisPrices(["채소", "과일", "수산"], date, kgPerConsumerUnitByName),
+    fetchFishMarketPerKg(date),
+  ]);
 
   const rows = [];
   for (const item of targets) {
+    const market = sourceMarketFor(item);
+    // 수산 경락가는 가락이 아니라 해수부 위판장(금액÷중량)에서 온다
+    const fishHit = market === "fish_market" ? lookupBySourceName(fish, item) : undefined;
     const garakPerKg =
-      item.category === "수산"
-        ? null // 가락 청과 법인만 조회 가능 — 수산은 경락가 원천이 없다
-        : await fetchGarakAuctionPerKg(itemQueryName(item), date);
+      market === "garak"
+        ? await fetchGarakAuctionPerKg(itemQueryName(item), date)
+        : null;
 
     const k = kamis?.get(item.name) ?? kamis?.get(itemQueryName(item));
     const kamisSeriesToday =
       k?.seriesPerKg?.filter((p) => p.date === date).at(-1)?.price ?? null;
-    const resolution = resolveAuctionPerKg(garakPerKg, kamisSeriesToday);
+    const resolution =
+      market === "fish_market"
+        ? {
+            perKg: fishHit && !fishHit.rejected ? fishHit.perKg : null,
+            rejected: fishHit?.rejected ?? null,
+          }
+        : resolveAuctionPerKg(garakPerKg, kamisSeriesToday);
 
     const ratio =
       garakPerKg && kamisSeriesToday
@@ -56,9 +67,12 @@ export async function GET(req: Request) {
     rows.push({
       name: item.name,
       category: item.category,
+      sourceMarket: market,
       auctionUnit: item.auctionUnit,
       weightKg: item.weightKg,
       garakPerKg,
+      fishMarketPerKg: fishHit?.perKg ?? null,
+      fishMarketCount: fishHit?.marketCount ?? null,
       kamisTodayPerKg: kamisSeriesToday,
       kamisBaselinePerKg: k?.baselinePerKg ?? null,
       kamisWholesaleUnit: k?.wholesaleUnit ?? null,

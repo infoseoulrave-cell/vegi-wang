@@ -23,6 +23,23 @@ export type RetailGapLevel = "reasonable" | "normal" | "bubble";
  */
 export type PriceStatus = "live" | "carried" | "missing";
 
+/**
+ * 경락가가 어느 시장에서 왔는지.
+ * 청과는 가락 도매시장, 수산은 수협 산지 위판장으로 원천이 다르다.
+ * 한 화면에 섞이므로 품목마다 출처를 밝힌다.
+ */
+export type PriceSourceMarket = "garak" | "fish_market";
+
+export const SOURCE_MARKET_LABEL: Record<PriceSourceMarket, string> = {
+  garak: "서울 가락동 농수산물도매시장",
+  fish_market: "전국 수협 위판장",
+};
+
+export const SOURCE_MARKET_SHORT: Record<PriceSourceMarket, string> = {
+  garak: "가락 경락가",
+  fish_market: "산지 위판가",
+};
+
 /** 기준선을 어떤 근거로 산출했는지 — UI에 그대로 노출한다 */
 export type BaselineMethod =
   | "kamis_dpr7" // 자체 이력 부족 → KAMIS 평년가 (부트스트랩)
@@ -72,6 +89,8 @@ export interface CatalogItem {
   aliases?: {
     kamis?: string[];
     garak?: string[];
+    /** 해수부 위판 표준코드명 (mprcStdCodeNm) */
+    fishMarket?: string[];
   };
 
   /**
@@ -102,6 +121,9 @@ export interface PriceItem extends CatalogItem {
 
   /** [소매] 소매 평균가 (원/kg). 없으면 undefined — 0으로 뭉개지 않는다 */
   retailPerKg?: number;
+
+  /** 이 경락가가 어느 시장에서 왔는지 */
+  sourceMarket: PriceSourceMarket;
 
   /** 경락가 신선도 */
   priceStatus: PriceStatus;

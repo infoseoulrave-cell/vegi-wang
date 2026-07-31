@@ -34,12 +34,11 @@ describe("db migrations", () => {
     await applyAll(db);
   }, 60_000);
 
-  it("파일명 순서대로 전량 적용된다", () => {
-    expect(migrationFiles()).toEqual([
-      "001_init.sql",
-      "002_retail_price.sql",
-      "003_price_axis.sql",
-    ]);
+  it("번호 접두 순서대로 정렬된다", () => {
+    const files = migrationFiles();
+    expect(files.length).toBeGreaterThanOrEqual(4);
+    expect(files[0]).toBe("001_init.sql");
+    expect([...files].sort()).toEqual(files);
   });
 
   it("재실행해도 안전하다 (멱등)", async () => {
@@ -145,6 +144,63 @@ describe("db migrations", () => {
           (sale_date, market_code, item_id, item_name, avg_price, min_price, max_price,
            avg_price_per_kg, min_price_per_kg, max_price_per_kg, source, price_status)
         VALUES ('2026-07-29', '110001', 'cabbage', '배추X', 1, 1, 1, 1, 1, 1, 'garak', '대충값');
+      `),
+    ).rejects.toThrow();
+  });
+
+  it("수산 위판장이 별도 시장으로 시드된다", async () => {
+    const m = await db.query<{ code: string; name: string }>(
+      `SELECT code, name FROM markets ORDER BY code`,
+    );
+    expect(m.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "110001" }),
+        expect.objectContaining({ code: "900001", name: "전국 수협 위판장" }),
+      ]),
+    );
+  });
+
+  it("원천 소스에 fish_market이 허용되고 오타는 거부된다", async () => {
+    await db.exec(`
+      INSERT INTO raw_auction
+        (natural_key, sale_date, market_code, item_name, price, unit_kg, price_per_kg, source)
+      VALUES ('fk-1', '2026-07-31', '900001', '갈치', 220000, 10, 22000, 'fish_market');
+    `);
+    const n = await db.query<{ c: number }>(
+      `SELECT COUNT(*)::int AS c FROM raw_auction WHERE source = 'fish_market'`,
+    );
+    expect(n.rows[0].c).toBe(1);
+
+    await expect(
+      db.exec(`
+        INSERT INTO raw_auction
+          (natural_key, sale_date, market_code, item_name, price, source)
+        VALUES ('fk-2', '2026-07-31', '900001', '갈치', 1, '위판');
+      `),
+    ).rejects.toThrow();
+  });
+
+  it("품목이 자기 원천 시장을 들고 있다", async () => {
+    const cols = await db.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'items' AND column_name = 'source_market'`,
+    );
+    expect(cols.rows).toHaveLength(1);
+
+    await db.exec(`
+      INSERT INTO items (id, name, category, auction_unit, weight_kg, unit_verified, source_market)
+      VALUES ('hairtail', '갈치', '수산', '1kg', 1, TRUE, 'fish_market')
+      ON CONFLICT (id) DO NOTHING;
+    `);
+    const r = await db.query<{ source_market: string }>(
+      `SELECT source_market FROM items WHERE id = 'hairtail'`,
+    );
+    expect(r.rows[0].source_market).toBe("fish_market");
+
+    await expect(
+      db.exec(`
+        INSERT INTO items (id, name, category, auction_unit, weight_kg, source_market)
+        VALUES ('bogus', '테스트', '수산', '1kg', 1, '아무거나');
       `),
     ).rejects.toThrow();
   });

@@ -10,8 +10,9 @@
 
 | 소스 | 역할 | 축 특성 |
 |---|---|---|
-| 가락 경매결과 | **경락가의 유일한 원천** | 행마다 `UUN`(거래단량)을 주므로 자기완결적 환산. 추정 불필요 |
-| KAMIS 도매 | 교차검증 + 부트스트랩 기준선 | ⚠ 슬롯마다 축이 다르다 (아래) |
+| 가락 경매결과 | **청과 경락가 원천** | 행마다 `UUN`(거래단량)을 주므로 자기완결적 환산. 추정 불필요 |
+| 해수부 위판장 | **수산 경락가 원천** | `csmtAmount ÷ csmtWt` → 원/kg. 단위 문자열 파싱조차 불필요 |
+| KAMIS 도매 | 청과 교차검증 + 부트스트랩 기준선 | ⚠ 슬롯마다 축이 다르다 (아래). 수산에는 쓰지 않는다 |
 | KAMIS 소매 | 소매가 (오프라인 조사 표본) | 단위가 개수 기반이면 카탈로그 검증 중량 필요 |
 | 네이버 쇼핑 | 소매가 (온라인 판매가) | 밴드+표본수+변동계수로 신뢰도 관리 (002) |
 
@@ -34,7 +35,8 @@ dpr5(1개월전)·dpr6(1년전)·dpr7(평년)과 개수 기반 단위("1포기",
 
 ### 진단
 
-- `GET /api/debug/price-axis` — 품목별 두 소스의 원/kg를 나란히 덤프. 축이 어긋나면 여기서 먼저 보인다.
+- `GET /api/debug/price-axis` — 품목별 소스별 원/kg를 나란히 덤프. 축이 어긋나면 여기서 먼저 보인다.
+- `GET /api/debug/fish-market` — 위판장 축 확정용 진단 (아래 참고)
 - `GET /api/health` — 스토리지·자격증명·최근 수집(`lastIngest`)·카탈로그 검증 현황
 - `npm run catalog:verify` — KAMIS 실응답 단위와 대조 → `docs/CATALOG_VERIFICATION.md`
 
@@ -44,7 +46,7 @@ dpr5(1개월전)·dpr6(1년전)·dpr7(평년)과 개수 기반 단위("1포기",
 |---|---|
 | `priceStatus` | `live` / `carried`(최근 7일 이월, `asOfDate` 표시 필수) / `missing`(비노출) |
 | `baselineMethod` | `kamis_dpr7`(부트스트랩) → 자체 이력 14일 이상이면 `moving_avg_30` → 365일 이상이면 `seasonal` |
-| 서빙 대상 | `unitVerified: true` 품목만 (`servableCatalog()`). 현재 47/56 |
+| 서빙 대상 | `unitVerified: true` 품목만 (`servableCatalog()`). 현재 53/56 |
 | 거품 배수 | 경락가·소매가 **양쪽이 모두 실측일 때만** 산출. 한쪽이라도 없으면 표시하지 않는다 |
 
 설계 문서: [`superpowers/specs/2026-07-31-price-axis-and-baseline-design.md`](./superpowers/specs/2026-07-31-price-axis-and-baseline-design.md)
@@ -165,15 +167,42 @@ curl -s -H "Authorization: Bearer dev" localhost:3000/api/cron/ingest
 |---|---|---|
 | `src/lib/sources/unit.ts` | 단위 문자열 파싱 (`parseUnitKg`, `unitTotalKg`) | **나눗셈의 근거를 만드는 유일한 곳** |
 | `src/lib/sources/garak.ts` | `fetchGarakAuctionPerKg` → 원/kg | 거래단위로 되돌리지 않는다 |
+| `src/lib/sources/fishMarket.ts` | 위판장 → 원/kg (금액÷중량) | 원문 단가(`csmtUntpc`)를 대표값으로 쓰지 않는다 |
 | `src/lib/sources/kamis.ts` | `resolveKamisPerKg` 슬롯별 축 해석 | 위 축 규칙 참고 |
 | `src/lib/catalog.ts` | `servableCatalog`, `lookupBySourceName` | 부분문자열 매칭 금지 — 정확일치 + 별칭만 |
 | `src/lib/prices.ts` | `resolveAuctionPerKg`(축 게이트), 이월 로직 | 10배 이상 벌어지면 둘 다 거부 |
 | `src/lib/compass.ts` | `withSignal` — 신호 계산 | **나눗셈 금지.** 곱해서만 파생한다 |
 | `src/server/services/aggregate.ts` | raw → daily → baseline | 원/kg로 집계, 환산 불가 행은 제외 |
 
+## 수산 위판장 (해수부 15056856)
+
+수산은 가락 청과 법인 조회로는 잡히지 않아 경락가 원천이 없었다.
+해양수산부 위판장별 위탁판매 현황을 붙여 산지 위판가를 원천으로 삼는다.
+
+| 항목 | 값 |
+|---|---|
+| 엔드포인트 | `http://apis.data.go.kr/1192000/select0040List/getselect0040List` |
+| 인증 | `DATA_GO_KR_SERVICE_KEY` (aT와 같은 공공데이터포털 키) |
+| 필수 파라미터 | `serviceKey`, `numOfRows`, `pageNo`, `baseDt`(YYYYMMDD) |
+| 축 | `csmtAmount`(위판금액) ÷ `csmtWt`(위판중량) |
+| 집계 | 전국 위판장 **총금액 ÷ 총중량** (중량 가중평균). 신선/냉장 우선 |
+| DB | 시장코드 `900001` "전국 수협 위판장". 위판장명은 `raw_auction.corp_name` |
+
+**⚠ 아직 라이브로 확인하지 못한 것** — `DATA_GO_KR_SERVICE_KEY` 미발급 상태다.
+
+1. `csmtWt`의 단위가 kg인가 (톤이면 원/kg가 1000배 어긋난다)
+2. `csmtUntpc`가 원/kg인가 (`unitPriceRatioMedian ≈ 1`이면 그렇다)
+3. `mprcStdCodeNm`이 카탈로그 품목명과 매칭되는가
+
+키가 붙는 즉시 `GET /api/debug/fish-market`으로 셋 다 확인하고,
+통과하면 `fishMarket.ts` 상단의 "미검증" 주석을 지운다.
+① 이 틀리면 `FISH_PLAUSIBLE_PER_KG` 밴드에서 거부되므로 화면에는 나가지 않는다.
+
 ## 남은 작업
 
 - [ ] `DATABASE_URL` / `CRON_SECRET` 설정 → `npm run db:migrate` → Cron 실가동
 - [ ] 자체 이력 14일 축적 후 기준선이 `moving_avg_30`으로 자동 전환되는지 확인
 - [ ] 축 정상화 후 거품 임계값(1.8 / 2.5) 실측 분포로 재조정
-- [ ] 미검증 9품목: 수박(가락 UUN으로 실중량 확인), 수산 7종(도매 원천 부재 — 해수부 위판장 API 필요)
+- [ ] `DATA_GO_KR_SERVICE_KEY` 발급 → `/api/debug/fish-market`으로 위판장 축 3종 확정
+- [ ] 위판 표준코드명 확인 후 `FISH_ALIASES`(scripts/verify-catalog.mjs) 정정
+- [ ] 미검증 3품목: 수박(가락 UUN으로 실중량 확인), 아보카도·수입조기(국내 원천 부재)

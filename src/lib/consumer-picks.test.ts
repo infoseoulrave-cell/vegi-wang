@@ -23,6 +23,7 @@ function item(
     grade: "상",
     origin: "테스트",
     unitVerified: true,
+    sourceMarket: "garak",
     baselineMethod: "kamis_dpr7",
     priceStatus: "live",
     auctionPerKg: 1000,

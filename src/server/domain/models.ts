@@ -1,6 +1,11 @@
-import type { BaselineMethod, PriceStatus, ProduceCategory } from "@/lib/types";
+import type {
+  BaselineMethod,
+  PriceSourceMarket,
+  PriceStatus,
+  ProduceCategory,
+} from "@/lib/types";
 
-export type AuctionIngestSource = "at" | "garak" | "manual";
+export type AuctionIngestSource = "at" | "garak" | "fish_market" | "manual";
 export type IngestRunStatus = "running" | "success" | "empty" | "failed";
 
 export interface Market {
@@ -22,6 +27,8 @@ export interface ItemMaster {
   isActive: boolean;
   /** 환산중량이 실제 소스 응답과 대조 검증되었는가 */
   unitVerified: boolean;
+  /** 경락가 원천 시장 — 청과는 가락, 수산은 위판장 */
+  sourceMarket: PriceSourceMarket;
 }
 
 /**

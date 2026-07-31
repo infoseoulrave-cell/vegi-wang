@@ -1,4 +1,4 @@
-import { CATALOG_ITEMS } from "@/lib/catalog";
+import { CATALOG_ITEMS, sourceMarketFor } from "@/lib/catalog";
 import type { ItemMaster, Market } from "@/server/domain/models";
 import type { Repositories } from "@/server/repos/types";
 
@@ -6,6 +6,18 @@ export const GARAK_MARKET: Market = {
   code: "110001",
   name: "서울 가락동 농수산물도매시장",
   region: "서울",
+  isActive: true,
+};
+
+/**
+ * 해수부 위판장 집계 원천.
+ * 표준 도매시장코드 체계에 속하지 않으므로 900001을 부여했다.
+ * 개별 위판장명은 raw_auction.corp_name에 남는다.
+ */
+export const FISH_MARKET: Market = {
+  code: "900001",
+  name: "전국 수협 위판장",
+  region: "전국",
   isActive: true,
 };
 
@@ -27,6 +39,7 @@ export function catalogFromSource(): ItemMaster[] {
     defaultOrigin: i.origin,
     isActive: i.unitVerified,
     unitVerified: i.unitVerified,
+    sourceMarket: sourceMarketFor(i),
   }));
 }
 
@@ -36,7 +49,8 @@ export async function seedCatalog(repos: Repositories): Promise<{
   items: number;
 }> {
   await repos.catalog.ensureMarket(GARAK_MARKET);
+  await repos.catalog.ensureMarket(FISH_MARKET);
   const items = catalogFromSource();
   const n = await repos.catalog.upsertItems(items);
-  return { markets: 1, items: n };
+  return { markets: 2, items: n };
 }

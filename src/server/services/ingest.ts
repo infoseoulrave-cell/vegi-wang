@@ -8,6 +8,11 @@ import {
   parseGarakJson,
   type GarakRow,
 } from "@/lib/sources/garak";
+import {
+  parseFishMarketRows,
+  rowPerKg,
+  type FishMarketRow,
+} from "@/lib/sources/fishMarket";
 import { parseUnitKg } from "@/lib/sources/unit";
 import { CATALOG_ITEMS } from "@/lib/catalog";
 import { getEnv, preferredAuctionSource } from "@/server/config/env";
@@ -19,13 +24,20 @@ import {
   type RawAuctionRecord,
 } from "@/server/domain/models";
 import type { Repositories } from "@/server/repos/types";
-import { seedCatalog, GARAK_MARKET } from "@/server/services/catalog";
+import {
+  seedCatalog,
+  FISH_MARKET,
+  GARAK_MARKET,
+} from "@/server/services/catalog";
 import { aggregateSaleDate } from "@/server/services/aggregate";
 
 const AT_ENDPOINT =
   "http://apis.data.go.kr/B552895/openapi/service/MallRltmInfoService/getMallRltmInfo";
 const GARAK_JSON =
   "http://www.garak.co.kr/homepage/publicdata/dataJsonOpen.do";
+/** 해양수산부 위판장별 위탁판매 현황 (공공데이터포털 15056856) */
+const FISH_ENDPOINT =
+  "http://apis.data.go.kr/1192000/select0040List/getselect0040List";
 
 /**
  * 거래단량 문자열에서 원/kg를 파생한다.
@@ -170,6 +182,136 @@ async function fetchGarakRowsForItem(
   return out;
 }
 
+/**
+ * 위판 행 → 원천 레코드.
+ *
+ * price/unit은 응답 원문(단가·상자 등)을 그대로 보존하고, 집계가 쓰는
+ * pricePerKg는 **금액÷중량**으로 만든다. 원문 단가는 goodsUnitNm에 따라
+ * 기준이 달라 그대로 나누면 축이 깨진다.
+ */
+function fishToRaw(
+  rows: FishMarketRow[],
+  saleDate: string,
+  marketCode: string,
+): RawAuctionRecord[] {
+  return rows.map((r, idx) => {
+    const perKg = rowPerKg(r);
+    // 한 거래단위당 중량 — 표시용. 수량이 없으면 알 수 없다.
+    const unitKg = r.qty > 0 && r.weightKg > 0 ? r.weightKg / r.qty : null;
+    const base = {
+      marketCode,
+      corpCode: r.marketName || null,
+      itemName: r.itemName,
+      unit: r.unitName || null,
+      grade: r.spec || null,
+      saleDate,
+      seq: `${r.marketName}-${idx}`,
+      price: r.unitPrice,
+    };
+    return {
+      naturalKey: buildNaturalKey(base),
+      saleDate,
+      marketCode,
+      corpCode: null,
+      corpName: r.marketName || null,
+      itemName: r.itemName,
+      itemVariety: r.condition || null,
+      unit: r.unitName || null,
+      grade: r.spec || null,
+      origin: r.origin || null,
+      qty: r.qty || null,
+      price: r.unitPrice,
+      unitKg: unitKg != null ? Math.round(unitKg * 1000) / 1000 : null,
+      pricePerKg: perKg,
+      source: "fish_market" as const,
+      payload: { ...r },
+    };
+  });
+}
+
+async function fetchFishRows(saleDate: string): Promise<FishMarketRow[]> {
+  if (!getEnv().dataGoKrServiceKey) return [];
+  const out: FishMarketRow[] = [];
+  for (let page = 1; page <= 5; page += 1) {
+    const params = new URLSearchParams({
+      serviceKey: getEnv().dataGoKrServiceKey!,
+      numOfRows: "1000",
+      pageNo: String(page),
+      type: "json",
+      baseDt: saleDate.replace(/-/g, ""),
+    });
+    try {
+      const res = await fetch(`${FISH_ENDPOINT}?${params}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) break;
+      const text = await res.text();
+      if (text.trimStart().startsWith("<")) break;
+      const rows = parseFishMarketRows(JSON.parse(text));
+      out.push(...rows);
+      if (rows.length < 1000) break;
+    } catch {
+      break;
+    }
+  }
+  return out;
+}
+
+/**
+ * 수산 위판장 수집 — 가락과 시장 코드가 다르므로 별도 파이프라인이다.
+ * 실패해도 청과 수집을 막지 않는다.
+ */
+export async function ingestFishMarket(
+  repos: Repositories,
+  saleDate: string,
+): Promise<{ rowsFetched: number; rowsUpserted: number; dailyUpserted: number }> {
+  const marketCode = FISH_MARKET.code;
+  await repos.catalog.ensureMarket(FISH_MARKET);
+
+  const runId = await repos.ingestRuns.start({
+    saleDate,
+    marketCode,
+    source: "fish_market",
+  });
+
+  try {
+    const rows = await fetchFishRows(saleDate);
+    if (!rows.length) {
+      await repos.ingestRuns.finish(runId, {
+        status: "empty",
+        rowsFetched: 0,
+        rowsUpserted: 0,
+        errorMessage: "위판 데이터 없음 (휴장일 또는 serviceKey 미설정)",
+      });
+      return { rowsFetched: 0, rowsUpserted: 0, dailyUpserted: 0 };
+    }
+
+    const raw = fishToRaw(rows, saleDate, marketCode);
+    const rowsUpserted = await repos.auction.upsertRaw(raw);
+    const { dailyUpserted } = await aggregateSaleDate(
+      repos,
+      marketCode,
+      saleDate,
+      getEnv().baselineWindowDays,
+    );
+
+    await repos.ingestRuns.finish(runId, {
+      status: "success",
+      rowsFetched: rows.length,
+      rowsUpserted,
+    });
+    return { rowsFetched: rows.length, rowsUpserted, dailyUpserted };
+  } catch (err) {
+    await repos.ingestRuns.finish(runId, {
+      status: "failed",
+      rowsFetched: 0,
+      rowsUpserted: 0,
+      errorMessage: err instanceof Error ? err.message : String(err),
+    });
+    return { rowsFetched: 0, rowsUpserted: 0, dailyUpserted: 0 };
+  }
+}
+
 async function collectRaw(
   saleDate: string,
   marketCode: string,
@@ -273,6 +415,9 @@ export async function runMorningIngest(
       windowDays,
     );
 
+    // 수산은 시장 코드가 달라 별도 파이프라인으로 돈다. 실패해도 청과를 막지 않는다.
+    const fish = await ingestFishMarket(repos, saleDate);
+
     await repos.ingestRuns.finish(runId, {
       status: "success",
       rowsFetched: rows.length,
@@ -284,9 +429,9 @@ export async function runMorningIngest(
       marketCode,
       source,
       status: "success",
-      rowsFetched: rows.length,
-      rowsUpserted,
-      dailyUpserted,
+      rowsFetched: rows.length + fish.rowsFetched,
+      rowsUpserted: rowsUpserted + fish.rowsUpserted,
+      dailyUpserted: dailyUpserted + fish.dailyUpserted,
       baselinesUpserted,
     };
   } catch (err) {

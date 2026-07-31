@@ -31,6 +31,7 @@ describe("withSignal (최근 동향 포지션)", () => {
     grade: "상",
     origin: "강원 평창",
     unitVerified: true,
+    sourceMarket: "garak",
     auctionPerKg: 900,
     auctionPrevPerKg: 1120,
     auctionBaselinePerKg: 1260,
