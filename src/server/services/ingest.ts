@@ -15,7 +15,7 @@ import {
   type FishMarketRow,
 } from "@/lib/sources/fishMarket";
 import { parseUnitKg } from "@/lib/sources/unit";
-import { CATALOG_ITEMS } from "@/lib/catalog";
+import { CATALOG_ITEMS, sourceMarketFor } from "@/lib/catalog";
 import { getEnv, preferredAuctionSource } from "@/server/config/env";
 import { todayKST } from "@/server/domain/date";
 import {
@@ -166,28 +166,38 @@ async function fetchGarakRowsForItem(
   const ymd = saleDate.replace(/-/g, "");
   const out: Array<GarakRow & { corpCode: string }> = [];
 
-  for (const bubin of GARAK_CORP_CODES) {
-    const params = new URLSearchParams({
-      id,
-      passwd: pw,
-      dataid,
-      pagesize: "1000",
-      pageidx: "1",
-      "portal.templet": "false",
-      s_date: ymd,
-      s_bubin: bubin,
-      s_pummok: query,
-      s_sangi: "",
-    });
-    try {
-      const res = await fetch(`${GARAK_JSON}?${params}`, { cache: "no-store" });
-      if (!res.ok) continue;
-      const rows = parseGarakJson(await res.json());
-      for (const r of rows) out.push({ ...r, corpCode: bubin });
-    } catch {
-      // 법인 단위 실패는 스킵
-    }
-  }
+  /*
+   * 법인 6곳은 서로 독립이므로 병렬로 조회한다.
+   * 순차로 돌면 품목당 6번의 왕복이 직렬로 쌓여 수집 전체가 타임아웃 난다
+   * (실제로 /api/cron/ingest가 60초 한도에서 504로 죽었다).
+   */
+  const perCorp = await Promise.all(
+    GARAK_CORP_CODES.map(async (bubin) => {
+      const params = new URLSearchParams({
+        id,
+        passwd: pw,
+        dataid,
+        pagesize: "1000",
+        pageidx: "1",
+        "portal.templet": "false",
+        s_date: ymd,
+        s_bubin: bubin,
+        s_pummok: query,
+        s_sangi: "",
+      });
+      try {
+        const res = await fetch(`${GARAK_JSON}?${params}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return [];
+        const rows = parseGarakJson(await res.json());
+        return rows.map((r) => ({ ...r, corpCode: bubin }));
+      } catch {
+        return []; // 법인 단위 실패는 스킵
+      }
+    }),
+  );
+  for (const rows of perCorp) out.push(...rows);
   return out;
 }
 
@@ -337,11 +347,24 @@ async function collectRaw(
 
   if (preferred === "garak" || preferred === "at") {
     if (getEnv().garak.id) {
-      const names = CATALOG_ITEMS.map((i) => i.name);
-      const batches = await Promise.all(
-        names.map((n) => fetchGarakRowsForItem(n, saleDate)),
-      );
-      const flat = batches.flat();
+      /*
+       * 가락은 청과 법인만 조회한다 — 수산까지 던지면 있을 리 없는 품목에
+       * 법인 6곳씩 헛질의를 보내 시간만 쓴다.
+       */
+      const names = CATALOG_ITEMS.filter(
+        (i) => sourceMarketFor(i) === "garak",
+      ).map((i) => i.name);
+
+      // 전량 동시 호출은 레이트리밋·타임아웃을 부른다. 배치로 나눈다.
+      const flat: Array<GarakRow & { corpCode: string }> = [];
+      const BATCH = 6;
+      for (let i = 0; i < names.length; i += BATCH) {
+        const chunk = names.slice(i, i + BATCH);
+        const results = await Promise.all(
+          chunk.map((n) => fetchGarakRowsForItem(n, saleDate)),
+        );
+        for (const rows of results) flat.push(...rows);
+      }
       if (flat.length) {
         return {
           source: "garak",

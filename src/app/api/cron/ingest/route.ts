@@ -5,7 +5,11 @@ import { getRepositories } from "@/server/repos";
 import { runMorningIngest } from "@/server/services/ingest";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+/*
+ * 수집은 품목 수 × 법인 6곳만큼 외부 호출이 필요하다.
+ * 60초로는 부족해 504가 났다 — Fluid Compute 기본 한도(300초)까지 올린다.
+ */
+export const maxDuration = 300;
 
 function authorized(request: Request): boolean {
   const secret = getEnv().cronSecret;
