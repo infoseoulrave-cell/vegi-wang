@@ -67,6 +67,38 @@ export function isUsableDatabaseUrl(raw: string | null | undefined): boolean {
   }
 }
 
+/**
+ * DATABASE_URL이 왜 거부됐는지 **값을 노출하지 않고** 알려준다.
+ * 형식 문제는 흔한데 값을 볼 수 없어 진단이 어렵다 — 구조만 보고한다.
+ */
+export function describeDatabaseUrl(): {
+  present: boolean;
+  length: number;
+  scheme: string | null;
+  startsWithKeyName: boolean;
+  hasBrackets: boolean;
+  hasWhitespace: boolean;
+  valid: boolean;
+} {
+  const raw = getEnv().databaseUrl ?? "";
+  const url = raw.trim();
+  let scheme: string | null = null;
+  try {
+    scheme = new URL(url).protocol.replace(":", "");
+  } catch {
+    scheme = null;
+  }
+  return {
+    present: Boolean(raw),
+    length: url.length,
+    scheme,
+    startsWithKeyName: /^DATABASE_URL\s*=/i.test(url),
+    hasBrackets: /[[\]]/.test(decodeURIComponent(url.replace(/%/g, "%25"))),
+    hasWhitespace: /\s/.test(url),
+    valid: isUsableDatabaseUrl(raw),
+  };
+}
+
 let warnedBadUrl = false;
 
 export function hasDatabase(): boolean {

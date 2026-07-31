@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { getEnv, hasAtCredentials, hasDatabase, hasGarakCredentials, preferredAuctionSource } from "@/server/config/env";
+import {
+  describeDatabaseUrl,
+  getEnv,
+  hasAtCredentials,
+  hasDatabase,
+  hasGarakCredentials,
+  preferredAuctionSource,
+} from "@/server/config/env";
 import { getRepositories } from "@/server/repos";
 import { CATALOG_ITEMS } from "@/lib/catalog";
 
@@ -48,6 +55,8 @@ export async function GET() {
     ok: true,
     storage: repos.kind,
     databaseConfigured: hasDatabase(),
+    // 값은 노출하지 않고 구조만 — 형식 문제 진단용
+    databaseUrlCheck: describeDatabaseUrl(),
     auctionSourcePreference: preferredAuctionSource(),
     catalog: {
       total: catalog.length,
