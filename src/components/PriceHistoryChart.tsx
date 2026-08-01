@@ -92,13 +92,48 @@ export function PriceHistoryChart({
   );
 
   const pts = data.map((p, i) => ({ ...p, x: xAt(i), y: yAt(p.price) }));
-  const line = pts
-    .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
-    .join(" ");
-  const area =
-    pts.length > 0
-      ? `${line} L${pts[pts.length - 1]!.x},${pad.top + innerH} L${pts[0]!.x},${pad.top + innerH} Z`
-      : "";
+
+  /*
+   * 측정하지 않은 구간을 실선으로 잇지 않는다.
+   *
+   * 수집이 며칠 빠지면(휴장·API 한도 소진·장애) 앞뒤 두 점 사이가 몇 주씩
+   * 벌어진다. 그걸 직선으로 이으면 그 3주가 완만하게 변했다고 주장하는 셈인데,
+   * 우리는 그 구간을 재지 않았다. 끊어 그리고 점선으로만 연결한다.
+   *
+   * 3일: 주말+공휴일(최대 2일 연휴)까지는 정상 결측으로 보고 잇는다.
+   */
+  const MAX_JOIN_DAYS = 3;
+  const segments: (typeof pts)[] = [];
+  pts.forEach((p, i) => {
+    const gapDays =
+      i === 0 ? 0 : (times[i]! - times[i - 1]!) / 86_400_000;
+    if (i === 0 || gapDays > MAX_JOIN_DAYS) segments.push([p]);
+    else segments[segments.length - 1]!.push(p);
+  });
+
+  const toPath = (seg: typeof pts) =>
+    seg
+      .map(
+        (p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`,
+      )
+      .join(" ");
+
+  const lineSegs = segments.filter((s) => s.length >= 2).map(toPath);
+  const areaSegs = segments
+    .filter((s) => s.length >= 2)
+    .map(
+      (s) =>
+        `${toPath(s)} L${s[s.length - 1]!.x},${pad.top + innerH} L${s[0]!.x},${pad.top + innerH} Z`,
+    );
+  // 구간이 끊긴 자리를 점선으로 표시 — 이어졌다고 주장하지 않되 흐름은 보이게
+  const bridges = segments.slice(1).map((seg, i) => {
+    const prev = segments[i]!;
+    const a = prev[prev.length - 1]!;
+    const b = seg[0]!;
+    return `M${a.x.toFixed(1)},${a.y.toFixed(1)} L${b.x.toFixed(1)},${b.y.toFixed(1)}`;
+  });
+  // 홀로 떨어진 점은 선이 안 그려지므로 점으로 남긴다
+  const lonePts = segments.filter((s) => s.length === 1).map((s) => s[0]!);
 
   const rising =
     values.length >= 2 && values[values.length - 1]! >= values[0]!;
@@ -244,15 +279,41 @@ export function PriceHistoryChart({
           </text>
         ))}
 
-        <path d={area} fill={fill} fillOpacity="0.12" />
-        <path
-          d={line}
-          fill="none"
-          stroke={stroke}
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+        {areaSegs.map((d, i) => (
+          <path key={`a${i}`} d={d} fill={fill} fillOpacity="0.12" />
+        ))}
+        {/* 결측 구간 — 점선이라 "재지 않았다"가 눈에 보인다 */}
+        {bridges.map((d, i) => (
+          <path
+            key={`b${i}`}
+            d={d}
+            fill="none"
+            stroke={stroke}
+            strokeOpacity="0.3"
+            strokeWidth="1.5"
+            strokeDasharray="4 5"
+          />
+        ))}
+        {lineSegs.map((d, i) => (
+          <path
+            key={`l${i}`}
+            d={d}
+            fill="none"
+            stroke={stroke}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
+        {lonePts.map((p) => (
+          <circle
+            key={`p${p.date}`}
+            cx={p.x}
+            cy={p.y}
+            r="3"
+            fill={stroke}
+          />
+        ))}
 
         {/* hover crosshair */}
         {active && (
