@@ -9,6 +9,10 @@ import {
 } from "@/server/config/env";
 import { getRepositories } from "@/server/repos";
 import { CATALOG_ITEMS } from "@/lib/catalog";
+import {
+  assessIngest,
+  type IngestAssessment,
+} from "@/server/services/ops-alert";
 
 export const preferredRegion = "icn1";
 export const dynamic = "force-dynamic";
@@ -32,8 +36,10 @@ export async function GET() {
     rowsUpserted: number;
     finishedAt: string | null;
   } | null = null;
+  // 알림이 오기를 기다리지 않고도 수집 건강도를 눈으로 확인할 수 있어야 한다
+  let ingestHealth: IngestAssessment | null = null;
   try {
-    const runs = await repos.ingestRuns.latest(1);
+    const runs = await repos.ingestRuns.latest(14);
     const r = runs[0];
     if (r) {
       lastIngest = {
@@ -43,6 +49,14 @@ export async function GET() {
         rowsUpserted: r.rowsUpserted,
         finishedAt: r.finishedAt,
       };
+      ingestHealth = assessIngest(
+        {
+          status: r.status,
+          rowsUpserted: r.rowsUpserted,
+          saleDate: r.saleDate,
+        },
+        runs,
+      );
     }
   } catch {
     lastIngest = null;
@@ -65,6 +79,7 @@ export async function GET() {
       report: "docs/CATALOG_VERIFICATION.md",
     },
     lastIngest,
+    ingestHealth,
     credentials: {
       at: hasAtCredentials(),
       garak: hasGarakCredentials(),
