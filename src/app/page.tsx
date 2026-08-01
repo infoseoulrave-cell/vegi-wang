@@ -222,6 +222,20 @@ export default async function Home() {
           데이터 출처: 가락시장 경락가(서울시농수산식품공사) · 소매·동향(KAMIS
           농수산물유통정보)
         </p>
+        <nav className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs">
+          <Link
+            href="/policy"
+            className="font-medium text-foreground/55 underline underline-offset-2 hover:text-brand"
+          >
+            가격 공개 원칙
+          </Link>
+          <Link
+            href="/privacy"
+            className="font-medium text-foreground/55 underline underline-offset-2 hover:text-brand"
+          >
+            개인정보처리방침
+          </Link>
+        </nav>
       </footer>
     </main>
   );
