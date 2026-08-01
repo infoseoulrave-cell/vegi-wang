@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ChangeRate } from "@/components/ChangeRate";
 import { CompassBadge, RetailGapBadge } from "@/components/CompassBadge";
+import { FeaturedChart } from "@/components/FeaturedChart";
 import { PriceSparkline } from "@/components/PriceSparkline";
 import { categoryHref } from "@/lib/categories";
 import { COMPASS_META } from "@/lib/compass";
@@ -122,6 +123,8 @@ export function PriceBoard({
           </p>
         </div>
       )}
+
+      {visible.length > 0 && <FeaturedChart items={visible} />}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((item) => {

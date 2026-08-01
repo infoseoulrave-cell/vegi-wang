@@ -68,10 +68,20 @@ export async function getServedPriceFeed(
     return { ...live, storage: "live" };
   }
 
-  if (!daily.length) {
-    const live = await getLivePriceFeed(saleDate);
-    return { ...live, storage: "live" };
-  }
+  /*
+   * 오늘 경락이 없어도(주말·휴장·수집 실패) 여기서 물러나지 않는다.
+   *
+   * 예전에는 daily가 비면 곧장 실시간 경로로 돌아갔다. 그런데 아래 루프의
+   * resolveWithCarryForward가 존재하는 이유가 바로 "오늘 값이 없으면 직전
+   * 영업일 값을 날짜 라벨과 함께 쓴다"이다. 그 로직에 닿기도 전에 빠져나가면,
+   * 토요일마다 자체 이력·자체 기준선이 화면에서 사라지고 KAMIS 앵커 4점
+   * (1년전·1개월전·1주일전·오늘)만 남는다. 매일 쌓는 이력이 무의미해진다.
+   *
+   * 실측(2026-08-01 토): trendSource·baselineMethod·차트 171점이 전부 kamis였다.
+   *
+   * 이월할 이력조차 없으면 루프가 아무것도 만들지 못하므로, 그때만 물러난다.
+   */
+
 
   const [garakBaselines, fishBaselines] = await Promise.all([
     repos.auction.listBaselines(marketCode, saleDate, windowDays),
@@ -170,6 +180,12 @@ export async function getServedPriceFeed(
         { date: saleDate, price: resolved.perKg, label: "오늘", source: "db" },
       ]),
     });
+  }
+
+  // 이월할 이력조차 없다 — 그때만 실시간으로 물러난다
+  if (!built.length) {
+    const live = await getLivePriceFeed(saleDate);
+    return { ...live, storage: "live" };
   }
 
   return {

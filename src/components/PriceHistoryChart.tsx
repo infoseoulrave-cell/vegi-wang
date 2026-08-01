@@ -62,11 +62,29 @@ export function PriceHistoryChart({
   const yMax = max + span * 0.08;
   const ySpan = Math.max(yMax - yMin, 1);
 
+  /*
+   * x는 인덱스가 아니라 실제 날짜에 비례해야 한다.
+   *
+   * 시리즈에는 자체 일별 이력과 KAMIS 앵커(1년전·1개월전·1주일전·오늘)가
+   * 섞여 들어온다. 등간격으로 그리면 1년 간격과 하루 간격이 같은 폭이 되어,
+   * 오래전부터 완만했던 변화가 최근의 급등처럼 보인다. 없는 움직임을
+   * 만들어내는 셈이라 축을 날짜로 잡는다.
+   */
+  const times = useMemo(
+    () => data.map((p) => new Date(`${p.date}T12:00:00+09:00`).getTime()),
+    [data],
+  );
+  const tMin = times.length ? Math.min(...times) : 0;
+  const tSpan = times.length ? Math.max(...times) - tMin : 0;
+
   const xAt = useCallback(
-    (i: number) =>
-      pad.left +
-      (data.length <= 1 ? innerW / 2 : (i / (data.length - 1)) * innerW),
-    [data.length, innerW, pad.left],
+    (i: number) => {
+      if (data.length <= 1) return pad.left + innerW / 2;
+      // 모든 점이 같은 날짜면 날짜 비례가 성립하지 않는다 — 균등 배치로 물러난다
+      if (tSpan <= 0) return pad.left + (i / (data.length - 1)) * innerW;
+      return pad.left + ((times[i]! - tMin) / tSpan) * innerW;
+    },
+    [data.length, innerW, pad.left, times, tMin, tSpan],
   );
   const yAt = useCallback(
     (v: number) => pad.top + (1 - (v - yMin) / ySpan) * innerH,
@@ -92,16 +110,25 @@ export function PriceHistoryChart({
     Math.round(yMin + (ySpan * i) / (yTicks - 1)),
   );
 
-  const xTickIdx =
-    data.length <= 1
-      ? [0]
-      : Array.from(
-          new Set(
-            [0, Math.floor((data.length - 1) / 2), data.length - 1].filter(
-              (i) => i >= 0 && i < data.length,
-            ),
-          ),
-        );
+  /*
+   * 눈금도 인덱스가 아니라 좌표로 고른다. 날짜 비례 축에서는 가운데 인덱스가
+   * 끝점 바로 옆에 붙을 수 있어(1년전·1개월전·1주일전·오늘 → 가운데가 오른쪽 끝
+   * 근처), 인덱스로 뽑으면 라벨이 겹친다. 최소 간격을 두고 훑는다.
+   */
+  const MIN_TICK_GAP = 84;
+  const xTickIdx = useMemo(() => {
+    if (data.length <= 1) return [0];
+    const last = data.length - 1;
+    const kept = [0];
+    for (let i = 1; i < last; i += 1) {
+      if (xAt(i) - xAt(kept[kept.length - 1]!) >= MIN_TICK_GAP) kept.push(i);
+    }
+    // 마지막 점은 항상 보여주되, 직전 눈금과 붙으면 그 눈금을 물린다
+    while (kept.length && xAt(last) - xAt(kept[kept.length - 1]!) < MIN_TICK_GAP)
+      kept.pop();
+    kept.push(last);
+    return kept;
+  }, [data.length, xAt]);
 
   const active = hover != null ? pts[hover] : pts[pts.length - 1];
   const activeIdx = hover ?? pts.length - 1;
