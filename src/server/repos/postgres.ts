@@ -174,6 +174,7 @@ class PgAuctionRepo implements AuctionRepository {
         min_price: unitPrice(r.minPricePerKg, r.unitKg),
         max_price: unitPrice(r.maxPricePerKg, r.unitKg),
         avg_price_per_kg: r.avgPricePerKg,
+        median_price_per_kg: r.medianPricePerKg,
         min_price_per_kg: r.minPricePerKg,
         max_price_per_kg: r.maxPricePerKg,
         unit_kg: r.unitKg,
@@ -198,6 +199,7 @@ class PgAuctionRepo implements AuctionRepository {
           "min_price",
           "max_price",
           "avg_price_per_kg",
+          "median_price_per_kg",
           "min_price_per_kg",
           "max_price_per_kg",
           "unit_kg",
@@ -216,6 +218,7 @@ class PgAuctionRepo implements AuctionRepository {
           min_price = EXCLUDED.min_price,
           max_price = EXCLUDED.max_price,
           avg_price_per_kg = EXCLUDED.avg_price_per_kg,
+          median_price_per_kg = EXCLUDED.median_price_per_kg,
           min_price_per_kg = EXCLUDED.min_price_per_kg,
           max_price_per_kg = EXCLUDED.max_price_per_kg,
           unit_kg = EXCLUDED.unit_kg,
@@ -237,7 +240,7 @@ class PgAuctionRepo implements AuctionRepository {
   async getDaily(marketCode: string, saleDate: string): Promise<DailyItemPrice[]> {
     const rows = await this.sql`
       SELECT sale_date::text, market_code, item_id, item_name,
-             avg_price_per_kg, min_price_per_kg, max_price_per_kg, unit_kg,
+             avg_price_per_kg, median_price_per_kg, min_price_per_kg, max_price_per_kg, unit_kg,
              volume, trade_count, unit, grade, origin, source,
              price_status, as_of_date::text
       FROM daily_item_price
@@ -254,7 +257,7 @@ class PgAuctionRepo implements AuctionRepository {
   ): Promise<DailyItemPrice[]> {
     const rows = await this.sql`
       SELECT sale_date::text, market_code, item_id, item_name,
-             avg_price_per_kg, min_price_per_kg, max_price_per_kg, unit_kg,
+             avg_price_per_kg, median_price_per_kg, min_price_per_kg, max_price_per_kg, unit_kg,
              volume, trade_count, unit, grade, origin, source,
              price_status, as_of_date::text
       FROM daily_item_price
@@ -334,6 +337,9 @@ function mapDaily(r: Record<string, unknown>): DailyItemPrice {
     itemId: r.item_id == null ? null : String(r.item_id),
     itemName: String(r.item_name),
     avgPricePerKg: Number(r.avg_price_per_kg),
+    // 005 이전 행은 비어 있다 — representativePerKg가 평균으로 물러난다
+    medianPricePerKg:
+      r.median_price_per_kg == null ? 0 : Number(r.median_price_per_kg),
     minPricePerKg: Number(r.min_price_per_kg),
     maxPricePerKg: Number(r.max_price_per_kg),
     unitKg: r.unit_kg == null ? null : Number(r.unit_kg),

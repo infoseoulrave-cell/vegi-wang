@@ -25,6 +25,7 @@ import { addDaysISO, todayKST } from "@/server/domain/date";
 import type { DailyItemPrice } from "@/server/domain/models";
 import type { Repositories } from "@/server/repos/types";
 import { FISH_MARKET, seedCatalog } from "@/server/services/catalog";
+import { representativePerKg } from "@/server/services/aggregate";
 
 /**
  * DB에 최근 daily_item_price가 있으면 DB로 피드를 구성한다.
@@ -126,7 +127,7 @@ export async function getServedPriceFeed(
       // DB 이력은 전부 우리 수집분이라 같은 원천이다 — 비교에 안전하다
       history = dbHist.map((h) => ({
         date: h.saleDate,
-        price: h.avgPricePerKg,
+        price: representativePerKg(h),
         source: "db" as const,
       }));
     } catch {
@@ -141,7 +142,7 @@ export async function getServedPriceFeed(
 
     const todayRow = dailyByItemId.get(base.id);
     const resolved = resolveWithCarryForward(
-      todayRow?.avgPricePerKg ?? null,
+      todayRow ? representativePerKg(todayRow) : null,
       history,
       saleDate,
     );

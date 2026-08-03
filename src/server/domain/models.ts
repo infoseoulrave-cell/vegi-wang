@@ -66,7 +66,16 @@ export interface DailyItemPrice {
   marketCode: string;
   itemId: string | null;
   itemName: string;
+  /**
+   * 산술평균(원/kg). **대표가로 쓰지 않는다** — 진단·비교용으로만 남긴다.
+   *
+   * 평균은 포장 단위 구성에 휘둘린다. 같은 날 같은 "무"인데 4kg 포장은
+   * 3,271원/kg, 20kg 포장은 439원/kg다(2026-08-03 실측). 행 하나를 한 표로
+   * 세므로 소포장 행이 많으면 대표가가 그쪽으로 끌려간다.
+   */
   avgPricePerKg: number;
+  /** 대표가(원/kg) — 중앙값. 서빙은 이 값을 쓴다. */
+  medianPricePerKg: number;
   minPricePerKg: number;
   maxPricePerKg: number;
   volume: number | null;

@@ -3,7 +3,9 @@ import { buildNaturalKey, type RawAuctionRecord } from "@/server/domain/models";
 import {
   aggregateRawToDaily,
   computeBaselines,
+  median,
   MIN_BASELINE_SAMPLE_DAYS,
+  representativePerKg,
 } from "./aggregate";
 
 describe("buildNaturalKey", () => {
@@ -109,6 +111,7 @@ function daily(saleDate: string, avgPricePerKg: number) {
     itemId: "cabbage",
     itemName: "배추",
     avgPricePerKg,
+    medianPricePerKg: avgPricePerKg,
     minPricePerKg: avgPricePerKg,
     maxPricePerKg: avgPricePerKg,
     unitKg: 10,
@@ -167,5 +170,53 @@ describe("computeBaselines", () => {
     });
     expect(b?.sampleDays).toBe(MIN_BASELINE_SAMPLE_DAYS);
     expect(b?.avgPricePerKg).toBe(1000);
+  });
+});
+
+describe("대표가는 중앙값이다", () => {
+  /*
+   * 2026-08-03 실측에서 드러난 문제. 같은 날 같은 "무"인데 포장별로
+   * 원/kg가 7.5배 벌어졌다 — 4kg 868행 3,271원, 8kg 848행 1,879원,
+   * 20kg 398행 439원. 단순 평균은 행 하나를 한 표로 세므로 소포장 행이
+   * 많으면 대표가가 위로 밀린다. 소매보다 도매가 비싸 보이던 원인이다.
+   */
+  it("소포장 이상치가 대표가를 끌어올리지 못한다", () => {
+    const rows = [
+      // 20kg 대량 — 실제 시세에 가깝다
+      ...Array.from({ length: 5 }, (_, i) => raw(`b${i}`, "20kg", 8800, 440, 20)),
+      // 4kg 소포장 — 프리미엄이라 원/kg가 훨씬 높다
+      ...Array.from({ length: 4 }, (_, i) => raw(`s${i}`, "4kg", 13000, 3250, 4)),
+    ];
+    const [d] = aggregateRawToDaily(rows, new Map());
+
+    expect(d.avgPricePerKg).toBe(1689); // 평균은 소포장에 끌려간다
+    expect(d.medianPricePerKg).toBe(440); // 중앙값은 버틴다
+    expect(representativePerKg(d)).toBe(440);
+  });
+
+  it("행이 짝수면 가운데 두 값의 평균", () => {
+    const rows = [
+      raw("a", "10kg", 10000, 1000, 10),
+      raw("b", "10kg", 20000, 2000, 10),
+    ];
+    const [d] = aggregateRawToDaily(rows, new Map());
+    expect(d.medianPricePerKg).toBe(1500);
+  });
+
+  it("median이 비어 있는 옛 행은 평균으로 물러난다", () => {
+    // 005 마이그레이션 이전에 쌓인 행. 0을 대표가로 내보내면 안 된다.
+    expect(representativePerKg({ medianPricePerKg: 0, avgPricePerKg: 1234 })).toBe(1234);
+    expect(representativePerKg({ medianPricePerKg: null, avgPricePerKg: 1234 })).toBe(1234);
+  });
+});
+
+describe("median", () => {
+  it("빈 배열은 0", () => {
+    expect(median([])).toBe(0);
+  });
+  it("원본을 변형하지 않는다", () => {
+    const xs = [3, 1, 2];
+    median(xs);
+    expect(xs).toEqual([3, 1, 2]);
   });
 });

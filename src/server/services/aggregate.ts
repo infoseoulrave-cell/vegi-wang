@@ -15,6 +15,38 @@ import type { Repositories } from "@/server/repos/types";
 export const MIN_BASELINE_SAMPLE_DAYS = 14;
 
 /**
+ * 대표가는 중앙값이다.
+ *
+ * 평균은 포장 단위 구성에 휘둘린다 — 같은 날 같은 "무"인데 4kg 포장
+ * 3,271원/kg, 20kg 포장 439원/kg(2026-08-03 실측 868·398행). 단순 평균은
+ * 행 하나를 한 표로 세므로 소포장 행이 많으면 대표가가 위로 밀린다.
+ * 중앙값은 그 편향에 강하다.
+ *
+ * 다만 이건 완치가 아니다. 근본 원인은 한 품목명 안에 서로 다른 상품
+ * (세척무·조선무 등)이 섞여 있는 것이고, 그건 품종(PUMJONG) 분리로만 풀린다.
+ */
+/**
+ * 이 행의 대표가(원/kg).
+ *
+ * 005 마이그레이션 이전 행은 median이 비어 있다. 그때는 평균으로 물러난다 —
+ * 재집계하면 채워진다. 0을 대표가로 내보내는 것보다 낫다.
+ */
+export function representativePerKg(d: {
+  medianPricePerKg?: number | null;
+  avgPricePerKg: number;
+}): number {
+  const m = d.medianPricePerKg;
+  return m != null && m > 0 ? m : d.avgPricePerKg;
+}
+
+export function median(values: number[]): number {
+  if (!values.length) return 0;
+  const s = [...values].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return Math.round(s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2);
+}
+
+/**
  * 원천 행 → 품목명별 일별 집계 (순수). **원/kg 축으로만 집계한다.**
  *
  * 가락 응답은 10kg·20kg 상자가가 섞여 오므로 원문 price를 그대로 평균내면
@@ -74,6 +106,7 @@ export function aggregateRawToDaily(
       itemId: itemIdByName.get(acc.itemName) ?? null,
       itemName: acc.itemName,
       avgPricePerKg: avg,
+      medianPricePerKg: median(acc.pricesPerKg),
       minPricePerKg: Math.min(...acc.pricesPerKg),
       maxPricePerKg: Math.max(...acc.pricesPerKg),
       volume: acc.volume || null,
@@ -109,8 +142,12 @@ export function computeBaselines(input: {
     (d) => d.saleDate >= from && d.saleDate <= input.asOfDate,
   );
   if (inWindow.length < MIN_BASELINE_SAMPLE_DAYS) return null;
+  /*
+   * 기준선도 대표가와 같은 축이어야 한다. 오늘값은 중앙값인데 기준선을
+   * 평균으로 내면 편차율이 시세 변동이 아니라 산출 방식 차이를 찍는다.
+   */
   const avg = Math.round(
-    inWindow.reduce((s, d) => s + d.avgPricePerKg, 0) / inWindow.length,
+    inWindow.reduce((s, d) => s + representativePerKg(d), 0) / inWindow.length,
   );
   return {
     itemId: input.itemId,
