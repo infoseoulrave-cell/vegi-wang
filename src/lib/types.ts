@@ -145,6 +145,16 @@ export interface PriceItem extends CatalogItem {
    * 원천 차이가 등락률로 찍힌다 (배추 실측 기준 +68%).
    */
   auctionPrevPerKg?: number;
+  /**
+   * [경락] 기준일 경락 최저·최고가 (원/kg).
+   *
+   * 대표가는 평균이지만 경매는 등급·산지·거래단량에 따라 폭이 크다.
+   * 평균 하나만 보여주면 "그 값에 살 수 있다"로 읽히므로 범위를 함께 낸다.
+   * 이월(carried)이거나 원천에 범위가 없으면 undefined — 평균으로 채우지 않는다.
+   */
+  auctionLowPerKg?: number;
+  auctionHighPerKg?: number;
+
   /** 기준선 (원/kg) */
   auctionBaselinePerKg: number;
   /** 기준선 산출 근거 */

@@ -15,7 +15,7 @@ import {
   type FishMarketRow,
 } from "@/lib/sources/fishMarket";
 import { parseUnitKg } from "@/lib/sources/unit";
-import { CATALOG_ITEMS, sourceMarketFor } from "@/lib/catalog";
+import { garakQueryNames } from "@/lib/catalog";
 import { getEnv, preferredAuctionSource } from "@/server/config/env";
 import { todayKST } from "@/server/domain/date";
 import {
@@ -351,9 +351,7 @@ async function collectRaw(
        * 가락은 청과 법인만 조회한다 — 수산까지 던지면 있을 리 없는 품목에
        * 법인 6곳씩 헛질의를 보내 시간만 쓴다.
        */
-      const names = CATALOG_ITEMS.filter(
-        (i) => sourceMarketFor(i) === "garak",
-      ).map((i) => i.name);
+      const names = garakQueryNames();
 
       // 전량 동시 호출은 레이트리밋·타임아웃을 부른다. 배치로 나눈다.
       const flat: Array<GarakRow & { corpCode: string }> = [];

@@ -1,4 +1,6 @@
+import { itemIdBySourceName } from "@/lib/catalog";
 import { addDaysISO } from "@/server/domain/date";
+import { FISH_MARKET } from "@/server/services/catalog";
 import type {
   DailyItemPrice,
   ItemBaseline,
@@ -132,12 +134,17 @@ export async function aggregateSaleDate(
 ): Promise<{ dailyUpserted: number; baselinesUpserted: number }> {
   const raw = await repos.auction.listRawByDate(marketCode, saleDate);
   const items = await repos.catalog.listItems();
-  const itemIdByName = new Map(items.map((i) => [i.name, i.id]));
-  // 부분 매칭도 허용
-  for (const i of items) {
-    const base = i.name.replace(/\(.*?\)/g, "").trim();
-    if (!itemIdByName.has(base)) itemIdByName.set(base, i.id);
-  }
+  /*
+   * 원천 품목명 → 카탈로그 id.
+   *
+   * 예전에는 카탈로그 이름의 괄호만 벗겨 넣었고 **원천 이름은 그대로** 뒀다.
+   * 그래서 가락이 "참다래(수입)"로 주는 품목이 "참다래"와 매칭되지 않아,
+   * 원천에는 행이 들어와 있는데 집계에서 통째로 버려졌다.
+   * 이제 소스별 별칭 테이블이 양쪽을 모두 담당한다.
+   */
+  const itemIdByName = itemIdBySourceName(
+    marketCode === FISH_MARKET.code ? "fishMarket" : "garak",
+  );
 
   const daily = aggregateRawToDaily(raw, itemIdByName);
   const dailyUpserted = await repos.auction.upsertDaily(daily);

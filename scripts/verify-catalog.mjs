@@ -28,6 +28,39 @@ const KAMIS_ALIASES = {
 };
 
 /**
+ * 가락 경매결과의 품목명 별칭.
+ *
+ * 가락은 카탈로그와 다른 표기를 쓰는 품목이 있다. 이름 하나만 질의하면
+ * 부분매칭이 0건이 되어 그 품목은 **수집 자체가 안 된다** — 화면에서
+ * 조용히 사라지는 경로라 KAMIS 별칭보다 위험하다.
+ * 확인: /api/debug/sources?items=... (2026-08-03 실측)
+ */
+const GARAK_ALIASES = {
+  "멜론": ["메론"],
+  "피마늘": ["마늘"],
+};
+
+/**
+ * 가락 거래단량 실측 근거.
+ *
+ * KAMIS 도매 단위와 대조하는 검증은 **KAMIS가 원천일 때만** 타당하다.
+ * 청과의 경락가 원천은 가락이고, 가락은 행마다 UUN(거래단량)을 주므로
+ * 원/kg 환산이 행 단위로 자기완결한다. 두 소스의 단위가 다르다는 이유로
+ * 품목을 버리면, 근거가 있는 값을 근거 없다며 감추는 셈이 된다.
+ *
+ * 그래서 KAMIS 대조를 대신할 수 있는 유일한 것이 원천 실측이다.
+ * 추정이 아니라 **관측**이어야 하므로 측정일·최빈 단량·행수를 함께 적는다.
+ * 갱신하려면 raw_auction에서 해당 품목의 unit 분포를 다시 뽑을 것.
+ */
+const GARAK_UNIT_EVIDENCE = {
+  "수박": { weightKg: 10, unit: "10kg", rows: 209, total: 1085, measured: "2026-08-03" },
+  "피마늘": { weightKg: 20, unit: "20kg", rows: 75, total: 77, measured: "2026-08-03" },
+  "참다래(수입)": { weightKg: 6, unit: "6kg", rows: 31, total: 49, measured: "2026-07-20~08-03" },
+  "레몬(수입)": { weightKg: 18, unit: "18kg", rows: 20, total: 29, measured: "2026-07-20~08-03" },
+  "아보카도(수입)": { weightKg: 5, unit: "5kg", rows: 1, total: 1, measured: "2026-07-20~08-03" },
+};
+
+/**
  * 해수부 위판 표준코드명(mprcStdCodeNm) 별칭 후보.
  *
  * 매칭 실패는 "값이 틀림"이 아니라 "품목이 안 보임"으로 끝나므로 안전하다.
@@ -170,6 +203,21 @@ for (const item of items) {
         );
       }
     }
+  } else if (GARAK_UNIT_EVIDENCE[item.name]) {
+    /*
+     * 원천(가락) 실측이 있는 품목은 KAMIS 대조를 건너뛴다.
+     * 대조 대상이 아니라 대조의 근거 자체가 원천에서 나왔기 때문이다.
+     */
+    const g = GARAK_UNIT_EVIDENCE[item.name];
+    if (Math.abs(g.weightKg - item.weightKg) > 1e-6) {
+      problems.push(
+        `weightKg=${item.weightKg} ≠ 가락 실측 최빈 거래단량 "${g.unit}"(${g.weightKg}kg)`,
+      );
+    } else {
+      evidence.push(
+        `가락 실측 거래단량 최빈 "${g.unit}" ${g.rows}/${g.total}행 (${g.measured}) — 행 단위 원/kg 환산이 자기완결`,
+      );
+    }
   } else if (!row) {
     problems.push("KAMIS 품목 목록에 없음 — 별칭 선언 또는 카탈로그 제외 필요");
   } else {
@@ -227,10 +275,14 @@ function serialize(r) {
   const it = r.item;
   const note = r.ok ? r.evidence.join(" / ") : r.problems.join(" / ");
   const kamisAlias = KAMIS_ALIASES[it.name];
+  const garakAlias = it.category !== "수산" ? GARAK_ALIASES[it.name] : null;
   const fishAlias = it.category === "수산" ? FISH_ALIASES[it.name] : null;
   const aliasParts = [];
   if (kamisAlias) {
     aliasParts.push(`kamis: [${kamisAlias.map((a) => `"${esc(a)}"`).join(", ")}]`);
+  }
+  if (garakAlias) {
+    aliasParts.push(`garak: [${garakAlias.map((a) => `"${esc(a)}"`).join(", ")}]`);
   }
   if (fishAlias) {
     aliasParts.push(`fishMarket: [${fishAlias.map((a) => `"${esc(a)}"`).join(", ")}]`);

@@ -163,6 +163,14 @@ export async function getServedPriceFeed(
     built.push({
       ...base,
       auctionPerKg: resolved.perKg,
+      /*
+       * 범위는 **당일 실측 행에서만** 나온다. 이월값에 오늘 범위를 붙이면
+       * 어제 평균에 그제 최저·최고를 섞는 꼴이라, 이월이면 비운다.
+       */
+      auctionLowPerKg:
+        resolved.status === "carried" ? undefined : todayRow?.minPricePerKg,
+      auctionHighPerKg:
+        resolved.status === "carried" ? undefined : todayRow?.maxPricePerKg,
       // 이월이면 등락률을 만들지 않는다 (위 prices.ts와 동일 규칙)
       auctionPrevPerKg: resolved.status === "carried" ? undefined : prev?.price,
       auctionBaselinePerKg: baselinePerKg,

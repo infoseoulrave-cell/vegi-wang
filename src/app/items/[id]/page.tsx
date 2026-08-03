@@ -14,6 +14,9 @@ export const preferredRegion = "icn1";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+const SITE =
+  process.env.NEXT_PUBLIC_SITE_URL ?? "https://vegi-wang.vercel.app";
+
 export async function generateMetadata({
   params,
 }: {
@@ -21,10 +24,22 @@ export async function generateMetadata({
 }) {
   const { id } = await params;
   const base = getCatalogItem(id);
-  if (!base) return { title: "품목을 찾을 수 없습니다 — 베지왕" };
+  if (!base) return { title: "품목을 찾을 수 없습니다" };
+  const title = `${base.name} 가락 경매가·시세`;
+  const description = `${base.name} 가락시장 아침 경매가와 최근 추세 그래프 (${base.consumerUnit} 기준). 담기·관망 타이밍은 베지왕에서.`;
+  const url = `${SITE}/items/${id}`;
   return {
-    title: `${base.name} 가격 동향 — 베지왕`,
-    description: `${base.name} 가락 경매가와 최근 시세 그래프 (${base.consumerUnit} 기준).`,
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      title: `${title} | 베지왕`,
+      description,
+      url,
+      type: "website",
+      locale: "ko_KR",
+      siteName: "베지왕",
+    },
   };
 }
 
@@ -121,7 +136,9 @@ export default async function ItemDetailPage({
             <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
               {item.name}
             </h1>
-            <CompassBadge level={item.compass} />
+            {item.trendBasis !== "none" && (
+              <CompassBadge level={item.compass} />
+            )}
           </div>
           <p className="mt-2 text-sm text-foreground/55">
             {item.origin} · {item.grade} · 경매 {item.auctionUnit}
@@ -148,7 +165,9 @@ export default async function ItemDetailPage({
             </p>
           </div>
           <p className="mt-2 text-sm text-foreground/55">
-            {meta.hint} · 분위 {Math.round(stats.trendPercentile)}%
+            {item.trendBasis !== "none"
+              ? `${meta.hint} · 분위 ${Math.round(stats.trendPercentile)}%`
+              : "타이밍 판정은 최근 이력이 더 모이면 표시됩니다"}
             <span className="ml-2 text-xs text-foreground/40">
               이력 {source.auctionHistory}
               {source.retail === "none" ? " · 소매 없음" : ""}
@@ -184,24 +203,44 @@ export default async function ItemDetailPage({
           <p className="mt-1 text-xs text-foreground/50">
             {item.auctionUnit} · kg당 {won(item.auctionPerKg)}
           </p>
+          {/*
+            경매는 등급·산지·거래단량에 따라 폭이 크다. 평균만 보여주면
+            "그 값에 살 수 있다"로 읽히므로 그날 실제 낙찰 범위를 함께 낸다.
+          */}
+          {item.auctionLowPerKg != null && item.auctionHighPerKg != null ? (
+            <p className="nums mt-2 text-xs text-foreground/60">
+              그날 낙찰 범위 kg당 {won(item.auctionLowPerKg)} ~{" "}
+              {won(item.auctionHighPerKg)}
+              <span className="text-foreground/40"> · 대표가는 평균</span>
+            </p>
+          ) : null}
         </div>
         <div className="rounded-2xl bg-white p-5 ring-1 ring-black/5">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold">
-              소매 {item.consumerUnit} 약 {won(item.consumerRetailPrice)}
+              {item.consumerRetailPrice != null
+                ? `소매 ${item.consumerUnit} 약 ${won(item.consumerRetailPrice)}`
+                : "소매가 미확인"}
             </h2>
             <RetailGapBadge level={item.retailGap} />
           </div>
-          <p className="mt-2 text-sm">
-            소매의{" "}
-            <span className="font-bold text-brand-dark">
-              {item.retailMultiple}배
-            </span>
-            <span className="text-foreground/55">
-              {" "}
-              · {item.consumerUnit}당 {won(item.savingPerUnit)} 절약
-            </span>
-          </p>
+          {item.retailMultiple != null ? (
+            <>
+              <p className="mt-2 text-sm">
+                소매 대비{" "}
+                <span className="font-bold text-brand-dark">
+                  {item.retailMultiple}배
+                </span>
+              </p>
+              <p className="mt-1 text-xs text-foreground/50">
+                물류·선별·폐기·임대료가 포함된 값입니다
+              </p>
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-foreground/45">
+              소매 조사가가 없어 대비 배수를 표시하지 않습니다
+            </p>
+          )}
           <p className="mt-3 text-xs leading-relaxed text-foreground/60">
             {item.recommendation}
           </p>

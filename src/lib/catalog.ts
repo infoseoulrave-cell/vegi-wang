@@ -83,6 +83,65 @@ export function lookupBySourceName<T>(
 }
 
 /**
+ * 한 품목이 **특정 소스에서** 불릴 수 있는 이름들.
+ *
+ * itemLookupNames는 모든 소스의 별칭을 합치므로 집계에 쓰면 안 된다.
+ * 대파의 KAMIS 별칭 "파"가 가락 원천의 "파"(쪽파·실파 등)를 끌어와
+ * 다른 품목의 경락가가 대파로 집계된다.
+ */
+export function sourceLookupNames(
+  item: CatalogItem,
+  source: "garak" | "kamis" | "fishMarket",
+): string[] {
+  const names = [
+    item.name,
+    itemQueryName(item),
+    ...(item.aliases?.[source] ?? []),
+  ];
+  return [...new Set(names.filter(Boolean))];
+}
+
+/**
+ * 가락에 던질 조회어 목록 (중복 제거).
+ *
+ * 가락 표기가 카탈로그와 다른 품목이 있다 — 멜론은 "메론", 피마늘은 "마늘"로
+ * 등록돼 있어 카탈로그 이름 그대로 질의하면 부분매칭이 0건이 되고
+ * 그 품목은 통째로 수집되지 않는다. 별칭까지 함께 던진다.
+ */
+export function garakQueryNames(): string[] {
+  const names = new Set<string>();
+  for (const item of CATALOG_ITEMS) {
+    if (sourceMarketFor(item) !== "garak") continue;
+    names.add(itemQueryName(item));
+    for (const alias of item.aliases?.garak ?? []) names.add(alias);
+  }
+  return [...names];
+}
+
+/**
+ * 원천 응답의 품목명 → 카탈로그 id 매핑 (소스별).
+ *
+ * **정확한 품목명을 먼저 전부 등록한 뒤** 조회어·별칭을 채운다.
+ * 순서가 중요하다 — "참다래(수입)"은 괄호를 벗기면 "참다래"가 되므로,
+ * 별칭을 먼저 등록하면 수입 품목이 국산 id를 차지해 둘 중 하나가 사라진다.
+ */
+export function itemIdBySourceName(
+  source: "garak" | "fishMarket",
+): Map<string, string> {
+  const map = new Map<string, string>();
+  const scoped = CATALOG_ITEMS.filter(
+    (i) => (sourceMarketFor(i) === "fish_market" ? "fishMarket" : "garak") === source,
+  );
+  for (const item of scoped) map.set(item.name, item.id);
+  for (const item of scoped) {
+    for (const name of sourceLookupNames(item, source)) {
+      if (!map.has(name)) map.set(name, item.id);
+    }
+  }
+  return map;
+}
+
+/**
  * 개수 기반 단위 1개의 검증된 중량(kg)을 품목명으로 조회한다.
  * KAMIS 어댑터가 "1포기"/"10개" 같은 단위를 원/kg로 환산할 때 쓰는 유일한 근거.
  * 검증되지 않은 품목은 null — 어댑터가 추정하지 않고 값을 버린다.
