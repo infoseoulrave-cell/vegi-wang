@@ -16,7 +16,7 @@ export async function registerWaitlist(
   email: string,
   interest: string,
 ): Promise<{ ok: true; total: number }> {
-  const trimmed = interest.slice(0, 40) || "전체";
+  const trimmed = interest.slice(0, 200) || "전체";
   if (shouldUseRepoWaitlist(repos)) {
     const result = await repos.waitlist.add(email, trimmed);
     return { ok: true, total: result.total };

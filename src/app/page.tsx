@@ -1,12 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
 import { PriceBoard } from "@/components/PriceBoard";
-import { SavingsBasket } from "@/components/SavingsBasket";
+import { ShareLinkButton } from "@/components/ShareLinkButton";
 import { TodayPicks } from "@/components/TodayPicks";
 import { WaitlistForm } from "@/components/WaitlistForm";
 import { CATEGORY_META, categoryHref } from "@/lib/categories";
-import { buildTodayPickGroups, buildSavingsBasket } from "@/lib/consumer-picks";
-import { won } from "@/lib/format";
+import { buildTodayPickGroups } from "@/lib/consumer-picks";
 import type { ProduceCategory } from "@/lib/types";
 import { getRepositories } from "@/server/repos";
 import { getServedPriceFeed } from "@/server/services/price-feed";
@@ -18,131 +17,145 @@ const CATEGORY_TILES: ProduceCategory[] = ["채소", "과일", "수산"];
 
 export default async function Home() {
   const feed = await getServedPriceFeed(getRepositories());
-  const lowCount = feed.items.filter((i) => i.trendPosition === "low").length;
-  const best = [...feed.items].sort(
-    (a, b) => a.trendPercentile - b.trendPercentile,
-  )[0];
+  const judgeable = feed.items.filter((i) => i.trendBasis === "series");
+  const lowCount = judgeable.filter((i) => i.trendPosition === "low").length;
   const pickGroups = buildTodayPickGroups(feed.items);
-  const savingsBasket = buildSavingsBasket(feed.items);
-  const bestSaving = savingsBasket[0];
-  /*
-   * 전량 이월 상태 — 도매시장 정산 전이거나 휴장일이다.
-   * 실제 데이터이므로 "샘플"이라고 하면 거짓말이 된다.
-   */
   const isCarried = feed.auctionSource === "carried";
+  const shareText = `[베지왕] ${feed.date} 장보기 타이밍\n담기 ${pickGroups.buys.length} · 관망 ${pickGroups.watches.length}\n가락 경매가 기준`;
 
   return (
     <main className="w-full">
-      {/* 헤더 */}
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-5 py-5">
-        <Link href="/" className="flex items-center gap-2">
-          <span className="text-2xl">🥬</span>
-          <span className="text-xl font-extrabold tracking-tight">베지왕</span>
-        </Link>
-        <nav className="hidden items-center gap-1 sm:flex">
-          {CATEGORY_TILES.map((key) => (
+      <header className="absolute inset-x-0 top-0 z-20">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-5 py-5">
+          <Link href="/" className="flex items-center gap-2 text-white">
+            <span className="text-2xl" aria-hidden>
+              🥬
+            </span>
+            <span className="text-xl font-extrabold tracking-tight">베지왕</span>
+          </Link>
+          <nav className="flex items-center gap-2 sm:gap-3">
             <Link
-              key={key}
-              href={categoryHref(key)}
-              className="rounded-full px-3 py-1.5 text-sm font-semibold text-foreground/70 transition hover:bg-brand/10 hover:text-brand-dark"
+              href="/today"
+              className="rounded-full bg-white/15 px-3 py-2 text-sm font-semibold text-white ring-1 ring-white/25 backdrop-blur-sm transition hover:bg-white/25 sm:px-4"
             >
-              {CATEGORY_META[key].title}
+              오늘 타이밍
             </Link>
-          ))}
-        </nav>
-        <a
-          href="#waitlist"
-          className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark"
-        >
-          저가권 알림 받기
-        </a>
+            <a
+              href="#waitlist"
+              className="rounded-full bg-white px-3 py-2 text-sm font-semibold text-brand-dark shadow-sm transition hover:bg-emerald-50 sm:px-4"
+            >
+              알림 받기
+            </a>
+          </nav>
+        </div>
       </header>
 
-      {/* 히어로 (사진 기반) */}
-      <section className="mx-auto w-full max-w-6xl px-5">
-        <div className="relative h-[460px] w-full overflow-hidden rounded-3xl sm:h-[560px]">
-          <Image
-            src="/images/hero_market.png"
-            alt="가락시장 새벽 농수산물"
-            fill
-            priority
-            sizes="100vw"
-            className="object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/55 to-black/20" />
-          <div className="absolute inset-0 flex flex-col justify-center gap-5 p-7 sm:p-14">
-            <span className="w-fit rounded-full bg-white/15 px-3 py-1 text-sm font-semibold text-white backdrop-blur-sm ring-1 ring-white/25">
-              📈 최근 시세 동향 포지션
-            </span>
-            <h1 className="max-w-2xl text-3xl font-extrabold leading-tight tracking-tight text-white sm:text-5xl">
-              가락 <span className="text-emerald-300">아침 경매가</span>와
-              <br />
-              <span className="text-emerald-300">가격 그래프</span>로 보는 지금
-              위치
-            </h1>
-            <p className="max-w-xl text-base text-white/85 sm:text-lg">
-              작년·평년 대비보다, 최근 동향에서 이 가격이 저가권인지 고가권인지가
-              중요합니다. 1개·1포기 기준으로 번역해 그래프로 보여드립니다.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <a
-                href="#today-picks"
-                className="rounded-full bg-brand px-6 py-3 font-semibold text-white shadow-lg transition hover:bg-brand-dark"
-              >
-                오늘 추천 3 보기
-              </a>
-              <a
-                href="#savings-basket"
-                className="rounded-full bg-white/90 px-6 py-3 font-semibold text-foreground shadow-lg transition hover:bg-white"
-              >
-                절약 바구니 보기
-              </a>
-            </div>
-            <div className="nums flex flex-wrap gap-2 pt-1">
-              <HeroChip label="기준일" value={feed.date} />
-              <HeroChip label="추적 품목" value={`${feed.items.length}개`} />
-              <HeroChip label="최근 저가권" value={`${lowCount}개`} />
-              {best && (
-                <HeroChip
-                  label="가장 낮은 분위"
-                  value={`${best.name} ${Math.round(best.trendPercentile)}%`}
-                />
-              )}
-              {bestSaving && (
-                <HeroChip
-                  label="절약 최대"
-                  value={`${bestSaving.name} ${bestSaving.consumerUnit}당 ${won(bestSaving.savingPerUnit)}`}
-                />
-              )}
-            </div>
+      {/* 풀블리드 히어로 — 브랜드 + 유입 CTA */}
+      <section className="relative min-h-[100svh] w-full overflow-hidden">
+        <Image
+          src="/images/hero_market.png"
+          alt="가락시장 새벽 농수산물"
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/45 to-[var(--background)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_20%_30%,rgba(31,157,85,0.28),transparent_55%)]" />
+
+        <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-6xl flex-col justify-end px-5 pb-16 pt-28 sm:pb-24 sm:pt-32">
+          <p className="mb-4 text-sm font-semibold tracking-[0.18em] text-emerald-200/90 uppercase">
+            시세 공개 · 알림 준비 중
+          </p>
+          <h1 className="max-w-3xl text-4xl font-extrabold leading-[1.15] tracking-tight text-white sm:text-6xl">
+            베지왕
+          </h1>
+          <p className="mt-4 max-w-xl text-lg font-medium leading-relaxed text-white/90 sm:text-xl">
+            가락 아침 경매가로, 지금이 살 타이밍인지 알려드립니다.
+          </p>
+          <p className="mt-3 max-w-lg text-sm leading-relaxed text-white/70 sm:text-base">
+            오늘 담기·관망 품목과 그래프는 바로 볼 수 있습니다. 저가권 알림은
+            아래에서 받아 두세요.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              href="/today"
+              className="rounded-full bg-brand px-7 py-3.5 text-sm font-semibold text-white shadow-lg transition hover:bg-brand-dark sm:text-base"
+            >
+              오늘 타이밍 보기
+            </Link>
+            <a
+              href="#today-picks"
+              className="rounded-full bg-white/10 px-7 py-3.5 text-sm font-semibold text-white ring-1 ring-white/35 backdrop-blur-sm transition hover:bg-white/20 sm:text-base"
+            >
+              담기·관망 바로가기
+            </a>
+            <ShareLinkButton
+              title="베지왕 · 오늘 장보기 타이밍"
+              text={shareText}
+              path="/today"
+              label="공유"
+              className="rounded-full bg-white/10 px-7 py-3.5 text-sm font-semibold text-white ring-1 ring-white/35 backdrop-blur-sm transition hover:bg-white/20 sm:text-base"
+            />
           </div>
         </div>
       </section>
 
-      {/* 카테고리 사진 타일 → 고유 카테고리 페이지 */}
-      <section className="mx-auto mt-10 w-full max-w-6xl px-5">
-        <div className="grid grid-cols-3 gap-3 sm:gap-4">
+      {/* 유입 훅 — 히어로 직후 오늘 타이밍 */}
+      <section className="mx-auto w-full max-w-6xl px-5 pt-8 sm:pt-4">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold tracking-wider text-brand uppercase">
+              Live · {feed.date}
+            </p>
+            <h2 className="mt-1 text-2xl font-bold sm:text-3xl">
+              지금 볼 수 있는 타이밍
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm text-foreground/55">
+              검색·공유로 들어온 분도 바로 판단할 수 있게, 시세와 타이밍을 먼저
+              엽니다.
+              {isCarried && (
+                <span className="ml-2 inline-block rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                  직전 영업일 경락가 기준
+                </span>
+              )}
+            </p>
+          </div>
+          <div className="nums flex flex-wrap gap-2 text-xs">
+            <StatChip label="추적" value={`${feed.items.length}품목`} />
+            <StatChip label="판정" value={`${judgeable.length}개`} />
+            <StatChip label="저가권" value={`${lowCount}개`} />
+            <Link
+              href="/today"
+              className="rounded-md bg-brand px-2.5 py-1.5 font-semibold text-white"
+            >
+              /today 공유용 →
+            </Link>
+          </div>
+        </div>
+
+        <div className="mb-8 grid grid-cols-3 gap-3 sm:gap-4">
           {CATEGORY_TILES.map((key) => {
             const c = CATEGORY_META[key];
             return (
               <Link
                 key={key}
                 href={categoryHref(key)}
-                className="group relative aspect-square overflow-hidden rounded-2xl ring-1 ring-black/5"
+                className="group relative aspect-[4/3] overflow-hidden ring-1 ring-black/5"
               >
                 <Image
                   src={c.img}
                   alt={c.title}
                   fill
                   sizes="(max-width: 640px) 33vw, 360px"
-                  className="object-cover transition duration-300 group-hover:scale-105"
+                  className="object-cover transition duration-500 group-hover:scale-[1.03]"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
                 <div className="absolute inset-x-0 bottom-0 p-3 sm:p-4">
-                  <p className="text-lg font-bold text-white sm:text-xl">
+                  <p className="text-base font-bold text-white sm:text-lg">
                     {c.title}
                   </p>
-                  <p className="hidden text-xs text-white/80 sm:block">
+                  <p className="hidden text-xs text-white/75 sm:block">
                     {c.desc}
                   </p>
                 </div>
@@ -150,79 +163,78 @@ export default async function Home() {
             );
           })}
         </div>
-      </section>
 
-      <TodayPicks groups={pickGroups} />
-
-      <SavingsBasket items={feed.items} />
-
-      {/* 경매가 보드 */}
-      <section
-        id="board"
-        className="mx-auto mt-16 w-full max-w-6xl scroll-mt-6 px-5"
-      >
-        <div className="mb-5">
-          <h2 className="text-2xl font-bold">경매가 · 최근 동향 그래프</h2>
-          <p className="mt-1 text-sm text-foreground/50">
-            {feed.market} · 1개 기준 · 그래프는 최근 도매 시세 포지션
-            {isCarried && (
-              <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
-                직전 영업일 경락가 기준
-              </span>
-            )}
-          </p>
-        </div>
-        <PriceBoard items={feed.items} />
-      </section>
-
-      {/* 왜 베지왕 */}
-      <section className="mx-auto mt-20 grid w-full max-w-6xl gap-4 px-5 sm:grid-cols-3">
-        <Feature
-          icon="🛒"
-          title="구매 추천 · 관망 분리"
-          desc="담기 좋은 3종과 거품·고가권 관망 3종을 따로 보여 장보기 결정을 돕습니다."
+        <TodayPicks
+          groups={pickGroups}
+          trackedCount={feed.items.length}
+          judgeableCount={judgeable.length}
         />
-        <Feature
-          icon="🧺"
-          title="오늘의 절약 바구니"
-          desc="거품이 큰 종목이 아니라, 오늘 시세·유통마진이 괜찮은 절약 후보만 담아 장볼 때 참고하게 합니다."
-        />
-        <Feature
-          icon="🔔"
-          title="관심 품목 저가 알림"
-          desc="배추·사과처럼 고른 품목이 최근 저가권에 들어오면 아침 메일로 알려드립니다."
-        />
-      </section>
 
-      {/* 대기자 등록 */}
-      <section
-        id="waitlist"
-        className="mx-auto mt-20 w-full max-w-6xl scroll-mt-6 px-5"
-      >
-        <div className="rounded-3xl bg-white p-8 shadow-sm ring-1 ring-black/5 sm:p-10">
-          <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-2xl font-bold sm:text-3xl">
-              관심 품목, 저가권 들어오면 알려드릴게요
-            </h2>
-            <p className="mt-2 text-foreground/60">
-              평년 비교가 아니라, 최근 동향에서 싸질 때 먼저 받아보세요.
+        <div id="board" className="mt-14 scroll-mt-6">
+          <div className="mb-5">
+            <h2 className="text-2xl font-bold">경매가 · 최근 동향 그래프</h2>
+            <p className="mt-1 text-sm text-foreground/50">
+              {feed.market} · 소비자 단위로 번역
             </p>
           </div>
-          <div className="mx-auto mt-6 max-w-2xl">
+          <PriceBoard items={feed.items} />
+        </div>
+      </section>
+
+      {/* 가치 — 유입 후 이해 */}
+      <section className="mx-auto mt-16 grid w-full max-w-6xl gap-10 px-5 sm:grid-cols-3 sm:gap-8">
+        <Value
+          title="살 시점 당기기·미루기"
+          desc="분위와 추세로 ‘담기 좋은 날 / 관망할 날’을 나눕니다."
+        />
+        <Value
+          title="소비자 단위로 번역"
+          desc="상자·근 단위 경매가를 1개·1포기·kg 기준으로 풉니다."
+        />
+        <Value
+          title="보고 → 공유 → 알림"
+          desc="시세 페이지를 먼저 열고, 필요할 때 알림·거래를 붙입니다."
+        />
+      </section>
+
+      {/* 대기자 — 전환 */}
+      <section
+        id="waitlist"
+        className="mx-auto mt-20 w-full max-w-6xl scroll-mt-8 px-5 pb-4"
+      >
+        <div className="border border-black/8 bg-white px-6 py-10 sm:px-12 sm:py-14">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="text-xs font-bold tracking-[0.18em] text-brand uppercase">
+              Alerts
+            </p>
+            <h2 className="mt-2 text-2xl font-bold sm:text-3xl">
+              저가권·오픈 알림 남기기
+            </h2>
+            <p className="mt-3 text-sm leading-relaxed text-foreground/55 sm:text-base">
+              시세는 지금 볼 수 있습니다. 푸시·이메일 알림과 사업자 도구는
+              준비되는 대로 먼저 보냅니다.
+            </p>
+          </div>
+          <div className="mx-auto mt-8 max-w-2xl">
             <WaitlistForm />
           </div>
         </div>
       </section>
 
-      <footer className="mx-auto mt-16 w-full max-w-6xl border-t border-black/5 px-5 py-8 text-center">
-        <p className="text-sm font-semibold text-foreground/60">
-          🥬 베지왕 · 농수산물 유통을 소비자 편으로
+      <footer className="mx-auto mt-12 w-full max-w-6xl border-t border-black/5 px-5 py-10 text-center">
+        <p className="text-sm font-semibold text-foreground/65">
+          베지왕 · 가락 시세 기반 농식품 의사결정 플랫폼
         </p>
         <p className="mt-1.5 text-xs text-foreground/40">
-          데이터 출처: 가락시장 경락가(서울시농수산식품공사) · 소매·동향(KAMIS
-          농수산물유통정보)
+          데이터 출처: 가락시장 경락가(서울시농수산식품공사) · 동향·소매 참고(KAMIS)
         </p>
         <nav className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs">
+          <Link
+            href="/today"
+            className="font-medium text-foreground/55 underline underline-offset-2 hover:text-brand"
+          >
+            오늘 타이밍
+          </Link>
           <Link
             href="/policy"
             className="font-medium text-foreground/55 underline underline-offset-2 hover:text-brand"
@@ -241,29 +253,20 @@ export default async function Home() {
   );
 }
 
-function HeroChip({ label, value }: { label: string; value: string }) {
+function StatChip({ label, value }: { label: string; value: string }) {
   return (
-    <span className="rounded-lg bg-white/15 px-3 py-1.5 text-sm text-white backdrop-blur-sm ring-1 ring-white/20">
-      <span className="text-white/60">{label} </span>
-      <span className="font-semibold">{value}</span>
+    <span className="rounded-md bg-white px-2.5 py-1.5 ring-1 ring-black/8">
+      <span className="text-foreground/45">{label} </span>
+      <span className="font-semibold text-foreground/80">{value}</span>
     </span>
   );
 }
 
-function Feature({
-  icon,
-  title,
-  desc,
-}: {
-  icon: string;
-  title: string;
-  desc: string;
-}) {
+function Value({ title, desc }: { title: string; desc: string }) {
   return (
-    <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-black/5">
-      <div className="text-3xl">{icon}</div>
-      <h3 className="mt-3 text-lg font-bold">{title}</h3>
-      <p className="mt-1.5 text-sm leading-relaxed text-foreground/60">{desc}</p>
+    <div>
+      <h3 className="text-lg font-bold">{title}</h3>
+      <p className="mt-2 text-sm leading-relaxed text-foreground/60">{desc}</p>
     </div>
   );
 }

@@ -89,16 +89,10 @@ function buyTitle(item: PriceItemWithSignal, rank: number): {
   title: string;
   subtitle: string;
 } {
-  if (item.trendPosition === "low" && item.retailGap !== "bubble") {
-    return {
-      title: rank === 1 ? "지금 가장 담기 좋은" : "담기 좋은 타이밍",
-      subtitle: "최근 저가권 · 유통마진도 양호",
-    };
-  }
   if (item.trendPosition === "low") {
     return {
-      title: "저가권 진입",
-      subtitle: "최근 동향 대비 낮은 가격대",
+      title: rank === 1 ? "지금 가장 담기 좋은" : "담기 좋은 타이밍",
+      subtitle: "최근 동향 기준 저가권",
     };
   }
   return {
@@ -111,12 +105,6 @@ function watchTitle(item: PriceItemWithSignal): {
   title: string;
   subtitle: string;
 } {
-  if (item.retailGap === "bubble") {
-    return {
-      title: "소매 거품 주의",
-      subtitle: `소매÷도매 ${item.retailMultiple ?? "?"}배 — 관망·직거래 유리`,
-    };
-  }
   if (item.trendPosition === "high") {
     return {
       title: "고가권 · 관망",
@@ -125,7 +113,7 @@ function watchTitle(item: PriceItemWithSignal): {
   }
   return {
     title: "오늘은 관망",
-    subtitle: "유통마진·시세 부담이 큰 편",
+    subtitle: "시세 부담이 큰 편 · 급하지 않다면 미루기",
   };
 }
 
@@ -137,7 +125,8 @@ export function buildTodayPickGroups(
   items: PriceItemWithSignal[],
   limit = 3,
 ): TodayPickGroups {
-  const pool = everydayItems(items);
+  // 타이밍 판정 게이트를 통과한 품목만 두 칸 목록에 올린다
+  const pool = everydayItems(items).filter((i) => i.trendBasis === "series");
   if (!pool.length) return { buys: [], watches: [] };
 
   const byBuy = [...pool].sort((a, b) => buyScore(a) - buyScore(b));

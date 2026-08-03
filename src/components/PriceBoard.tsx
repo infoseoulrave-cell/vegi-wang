@@ -214,31 +214,20 @@ export function PriceBoard({
                   </span>
                   <RetailGapBadge level={item.retailGap} />
                 </div>
-                {/* 소매가가 없으면 배수·절약액을 지어내지 않는다.
-                    거품 판정 근거가 없는 시장(수산)은 배수만 보여준다. */}
-                {item.retailMultiple != null && item.retailGap != null ? (
+                {/* 소매 배수는 참고 정보. 절약액·거품 주장은 하지 않는다. */}
+                {item.retailMultiple != null ? (
                   <p className="mt-1 text-sm">
                     <span className="font-bold text-brand-dark">
-                      소매의 {multiple(item.retailMultiple)}
-                    </span>
-                    <span className="text-foreground/60">
-                      {" "}
-                      · {item.consumerUnit}당 {won(item.savingPerUnit)} 절약
-                    </span>
-                  </p>
-                ) : item.retailMultiple != null ? (
-                  <p className="mt-1 text-sm">
-                    <span className="font-bold text-brand-dark">
-                      소매의 {multiple(item.retailMultiple)}
+                      소매 대비 {multiple(item.retailMultiple)}
                     </span>
                     <span className="text-foreground/50">
                       {" "}
-                      · 산지 위판가 기준이라 유통 단계가 하나 더 많습니다
+                      · 물류·선별·폐기·임대료가 포함된 값입니다
                     </span>
                   </p>
                 ) : (
                   <p className="mt-1 text-sm text-foreground/45">
-                    소매 조사가가 없어 유통 거품을 계산하지 않았습니다
+                    소매 조사가가 없어 대비 배수를 표시하지 않습니다
                   </p>
                 )}
               </div>

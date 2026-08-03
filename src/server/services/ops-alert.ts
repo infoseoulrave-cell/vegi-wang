@@ -1,3 +1,4 @@
+import { addDaysISO } from "@/server/domain/date";
 import type { IngestRun, IngestRunStatus } from "@/server/domain/models";
 
 /**
@@ -23,27 +24,68 @@ export interface IngestAssessment {
   reason: string;
 }
 
+/** 알림 판정에 쓸 최근 sale_date 창 (백필이 최근 실행 기록을 잠식하는 오탐 방지) */
+export const INGEST_ASSESS_SALE_WINDOW_DAYS = 21;
+
+/**
+ * 실행 시각이 아니라 sale_date 기준으로 최근 창만 남긴다.
+ * 백필로 과거 빈손 날짜를 돌리면 startedAt 순 latest(14)가 전부 과거가 되어
+ * "14일 연속 실패" 오탐이 난다 — 그 기록을 판정에서 제외한다.
+ */
+export function filterRunsByRecentSaleDate(
+  runs: readonly IngestRun[],
+  asOfDate: string,
+  windowDays = INGEST_ASSESS_SALE_WINDOW_DAYS,
+): IngestRun[] {
+  const start = addDaysISO(asOfDate, -(windowDays - 1));
+  return runs.filter((r) => r.saleDate >= start && r.saleDate <= asOfDate);
+}
+
+/** 최근 sale_date 창 안에서 가장 최신 거래일 실행을 고른다 */
+export function pickLatestBySaleDate(
+  runs: readonly IngestRun[],
+): IngestRun | undefined {
+  if (!runs.length) return undefined;
+  return [...runs].sort((a, b) => {
+    const byDate = b.saleDate.localeCompare(a.saleDate);
+    if (byDate !== 0) return byDate;
+    return (b.startedAt || "").localeCompare(a.startedAt || "");
+  })[0];
+}
+
 /** 그 날짜의 수집이 실제로 데이터를 남겼는가 */
 function producedRows(run: IngestRun): boolean {
   return run.status === "success" && run.rowsUpserted > 0;
 }
 
 /**
- * 최신 날짜부터 거슬러 올라가며 빈손인 날을 센다.
+ * asOfDate부터 달력을 거슬러 올라가며 빈손인 날을 센다.
  * 같은 saleDate로 여러 번 실행됐다면 그중 하나라도 성공했으면 성공한 날로 접는다.
+ * 시도 기록이 없는 날은 건너뛴다(백필 공백이 연속 실패로 읽히지 않게).
  */
-export function emptyDayStreak(runs: readonly IngestRun[]): number {
+export function emptyDayStreak(
+  runs: readonly IngestRun[],
+  asOfDate?: string,
+): number {
   const byDate = new Map<string, boolean>();
   for (const run of runs) {
     const ok = producedRows(run);
     byDate.set(run.saleDate, (byDate.get(run.saleDate) ?? false) || ok);
   }
 
-  const dates = [...byDate.keys()].sort().reverse();
+  const end =
+    asOfDate ??
+    [...byDate.keys()].sort().reverse()[0];
+  if (!end) return 0;
+
   let streak = 0;
-  for (const date of dates) {
-    if (byDate.get(date)) break;
-    streak += 1;
+  let cursor = end;
+  for (let i = 0; i < 60; i++) {
+    if (byDate.has(cursor)) {
+      if (byDate.get(cursor)) break;
+      streak += 1;
+    }
+    cursor = addDaysISO(cursor, -1);
   }
   return streak;
 }
@@ -75,7 +117,8 @@ export function assessIngest(
     },
     ...recentRuns,
   ];
-  const streak = emptyDayStreak(merged);
+  // 백필 날짜를 채울 때는 그 날짜 기준으로 센다 — 오늘 휴장이 과거 성공을 502로 만들지 않는다
+  const streak = emptyDayStreak(merged, current.saleDate);
 
   if (current.status === "failed") {
     return {

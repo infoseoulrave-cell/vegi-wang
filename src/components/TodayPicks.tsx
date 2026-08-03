@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ChangeRate } from "@/components/ChangeRate";
-import { CompassBadge, RetailGapBadge } from "@/components/CompassBadge";
+import { CompassBadge } from "@/components/CompassBadge";
 import { won } from "@/lib/format";
 import type { TodayPick, TodayPickGroups } from "@/lib/consumer-picks";
 
@@ -9,12 +9,12 @@ const KIND_TONE: Record<
   { bar: string; chip: string }
 > = {
   buy: {
-    bar: "from-emerald-600/90 to-emerald-700/80",
-    chip: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+    bar: "from-emerald-700 to-emerald-800",
+    chip: "bg-emerald-50 text-emerald-800 ring-emerald-700/20",
   },
   watch: {
-    bar: "from-rose-600/90 to-rose-700/80",
-    chip: "bg-rose-50 text-rose-700 ring-rose-600/20",
+    bar: "from-stone-700 to-stone-800",
+    chip: "bg-stone-100 text-stone-700 ring-stone-500/20",
   },
 };
 
@@ -24,7 +24,7 @@ function PickCard({ pick }: { pick: TodayPick }) {
   return (
     <Link
       href={`/items/${item.id}`}
-      className="group overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md hover:ring-brand/20"
+      className="group overflow-hidden bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md hover:ring-brand/25"
     >
       <div className={`bg-gradient-to-r px-4 py-3 text-white ${tone.bar}`}>
         <p className="text-xs font-semibold opacity-90">
@@ -47,12 +47,6 @@ function PickCard({ pick }: { pick: TodayPick }) {
             {won(item.consumerAuctionPrice)}
           </p>
           <ChangeRate value={item.changeRate} />
-        </div>
-        <div className="flex items-center justify-between rounded-xl bg-background/70 px-3 py-2 text-xs ring-1 ring-black/5">
-          <span className="text-foreground/60">
-            소매 약 {won(item.consumerRetailPrice)}
-          </span>
-          <RetailGapBadge level={item.retailGap} />
         </div>
         <p
           className={`w-fit rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${tone.chip}`}
@@ -91,24 +85,52 @@ function PickSection({
   );
 }
 
-export function TodayPicks({ groups }: { groups: TodayPickGroups }) {
-  if (!groups.buys.length && !groups.watches.length) return null;
+export function TodayPicks({
+  groups,
+  trackedCount = 0,
+  judgeableCount = 0,
+}: {
+  groups: TodayPickGroups;
+  /** 피드 추적 품목 수 — 판정 0종일 때 빈 상태 문구에 씀 */
+  trackedCount?: number;
+  judgeableCount?: number;
+}) {
+  const empty = !groups.buys.length && !groups.watches.length;
+
+  if (empty) {
+    return (
+      <section
+        id="today-picks"
+        className="mb-10 rounded-2xl bg-white px-5 py-8 ring-1 ring-black/5"
+      >
+        <p className="text-xs font-bold tracking-wider text-brand uppercase">
+          Timing
+        </p>
+        <h2 className="mt-2 text-xl font-bold sm:text-2xl">
+          아직 타이밍을 판정할 만큼 이력이 모이지 않았습니다
+        </h2>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-foreground/55">
+          {trackedCount > 0
+            ? `${trackedCount}종 수집 중 · 최근 21일 안에 10일이 모이면 판정을 시작합니다.`
+            : "경락가 이력을 모으는 중입니다. 최근 21일 안에 10일이 모이면 담기·관망 타이밍을 표시합니다."}
+          {judgeableCount > 0 ? ` 현재 판정 가능 ${judgeableCount}개.` : null}
+        </p>
+      </section>
+    );
+  }
 
   return (
-    <div
-      id="today-picks"
-      className="mx-auto mt-12 flex w-full max-w-6xl scroll-mt-6 flex-col gap-12 px-5"
-    >
+    <div id="today-picks" className="flex w-full flex-col gap-12">
       <PickSection
         id="buy-picks"
-        title="오늘 구매 추천 3"
-        description="배추·사과·고등어처럼 자주 사는 생식품 중, 오늘 담기 좋은 것만"
+        title="오늘 담기 좋은 타이밍"
+        description="최근 추세 대비 저가권에 가까운 생식품"
         picks={groups.buys}
       />
       <PickSection
         id="watch-picks"
-        title="오늘 관망 3"
-        description="자주 사는 품목 중 거품·고가라 급하지 않다면 미루는 편이 나은 것"
+        title="오늘 관망할 타이밍"
+        description="최근 고가권이라 급하지 않다면 미루는 편이 나은 품목"
         picks={groups.watches}
       />
     </div>

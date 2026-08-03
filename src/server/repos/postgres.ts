@@ -533,7 +533,26 @@ class PgIngestRunRepo implements IngestRunRepository {
       ORDER BY started_at DESC
       LIMIT ${limit}
     `;
-    return rows.map((r) => ({
+    return rows.map((r) => this.mapRun(r));
+  }
+
+  async recentBySaleDate(
+    asOfDate: string,
+    windowDays = 21,
+  ): Promise<IngestRun[]> {
+    const rows = await this.sql`
+      SELECT id, sale_date::text, market_code, source, status,
+             rows_fetched, rows_upserted, error_message, started_at, finished_at
+      FROM ingest_runs
+      WHERE sale_date >= (${asOfDate}::date - (${windowDays}::int - 1))
+        AND sale_date <= ${asOfDate}::date
+      ORDER BY sale_date DESC, started_at DESC
+    `;
+    return rows.map((r) => this.mapRun(r));
+  }
+
+  private mapRun(r: Record<string, unknown>): IngestRun {
+    return {
       id: String(r.id),
       saleDate: String(r.sale_date).slice(0, 10),
       marketCode: String(r.market_code),
@@ -546,7 +565,7 @@ class PgIngestRunRepo implements IngestRunRepository {
       finishedAt: r.finished_at
         ? new Date(String(r.finished_at)).toISOString()
         : null,
-    }));
+    };
   }
 }
 

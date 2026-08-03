@@ -1,13 +1,19 @@
 "use client";
 
+import { track } from "@vercel/analytics";
 import { useMemo, useState, type FormEvent } from "react";
 import { CATALOG_ITEMS } from "@/lib/catalog";
 
 const CATEGORIES = ["채소", "과일", "수산", "전체"] as const;
+const ROLES = [
+  { id: "consumer", label: "소비자 · 장보기" },
+  { id: "business", label: "사업자 · 매입" },
+] as const;
 
-/** 관심 품목 저가권 알림 — 카테고리 + 개별 품목 선택 */
+/** 오픈 전 얼리 액세스 — 역할 + 관심 품목 */
 export function WaitlistForm() {
   const [email, setEmail] = useState("");
+  const [role, setRole] = useState<(typeof ROLES)[number]["id"]>("consumer");
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("전체");
   const [itemIds, setItemIds] = useState<string[]>([]);
   const [agreed, setAgreed] = useState(false);
@@ -44,8 +50,8 @@ export function WaitlistForm() {
     );
     const interest =
       names.length > 0
-        ? `${category}|${names.join(",")}`
-        : category;
+        ? `${role}|${category}|${names.join(",")}`
+        : `${role}|${category}`;
 
     try {
       const res = await fetch("/api/waitlist", {
@@ -61,10 +67,15 @@ export function WaitlistForm() {
       }
       setStatus("done");
       setMessage(
-        names.length
-          ? `${names.slice(0, 3).join("·")}${names.length > 3 ? " 외" : ""} 저가권 알림을 신청했어요. (대기 ${data.total.toLocaleString("ko-KR")}명)`
-          : `신청 완료! 현재 ${data.total.toLocaleString("ko-KR")}명이 아침 시세 알림을 기다리고 있어요.`,
+        role === "business"
+          ? `사업자 얼리 액세스에 등록했어요. (대기 ${data.total.toLocaleString("ko-KR")}명)`
+          : `오픈 알림을 신청했어요. (대기 ${data.total.toLocaleString("ko-KR")}명)`,
       );
+      try {
+        track("waitlist_signup", { role, category });
+      } catch {
+        /* ignore */
+      }
       setEmail("");
       setItemIds([]);
       setAgreed(false);
@@ -76,17 +87,37 @@ export function WaitlistForm() {
 
   if (status === "done") {
     return (
-      <div className="rounded-2xl bg-brand/10 p-6 text-center ring-1 ring-brand/20">
-        <p className="text-lg font-bold text-brand-dark">🌱 {message}</p>
-        <p className="mt-1 text-sm text-foreground/60">
-          관심 품목이 최근 저가권에 들어오면 아침 메일로 알려드릴게요.
+      <div className="border border-brand/25 bg-brand/8 p-6 text-center">
+        <p className="text-lg font-bold text-brand-dark">{message}</p>
+        <p className="mt-2 text-sm text-foreground/60">
+          정식 오픈과 관심 품목 저가권 소식을 메일로 먼저 보내드립니다.
         </p>
       </div>
     );
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <form onSubmit={submit} className="space-y-5">
+      <div>
+        <p className="mb-2 text-xs font-semibold text-foreground/50">이용 목적</p>
+        <div className="grid grid-cols-2 gap-2">
+          {ROLES.map((it) => (
+            <button
+              key={it.id}
+              type="button"
+              onClick={() => setRole(it.id)}
+              className={`rounded-xl px-3 py-3 text-sm font-semibold transition ${
+                role === it.id
+                  ? "bg-brand text-white"
+                  : "bg-background text-foreground/65 ring-1 ring-black/10"
+              }`}
+            >
+              {it.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div>
         <p className="mb-2 text-xs font-semibold text-foreground/50">관심 부류</p>
         <div className="flex flex-wrap gap-2">
@@ -112,7 +143,7 @@ export function WaitlistForm() {
 
       <div>
         <p className="mb-2 text-xs font-semibold text-foreground/50">
-          저가권 알림 받을 품목 (최대 8개, 선택)
+          관심 품목 (최대 8개, 선택)
         </p>
         <div className="flex flex-wrap gap-2">
           {itemChoices.map((it) => {
@@ -124,7 +155,7 @@ export function WaitlistForm() {
                 onClick={() => toggleItem(it.id)}
                 className={`rounded-full px-3 py-1 text-sm font-medium transition ${
                   on
-                    ? "bg-emerald-600 text-white"
+                    ? "bg-emerald-700 text-white"
                     : "bg-white text-foreground/60 ring-1 ring-black/10"
                 }`}
               >
@@ -135,7 +166,7 @@ export function WaitlistForm() {
         </div>
       </div>
 
-      <label className="flex cursor-pointer items-start gap-2.5 rounded-xl bg-white/70 p-3 ring-1 ring-black/5">
+      <label className="flex cursor-pointer items-start gap-2.5 rounded-xl bg-background/80 p-3 ring-1 ring-black/5">
         <input
           type="checkbox"
           checked={agreed}
@@ -146,9 +177,9 @@ export function WaitlistForm() {
           <b className="font-semibold text-foreground/90">
             개인정보 수집·이용에 동의합니다.
           </b>{" "}
-          수집 항목은 <b>이메일 주소</b>와 <b>관심 품목</b>이며, 시세 알림 발송에만
-          사용합니다. 수신거부 시 지체 없이 파기합니다. 동의를 거부하실 수 있으나
-          알림 신청은 불가합니다.{" "}
+          수집 항목은 <b>이메일</b>, <b>이용 목적</b>, <b>관심 품목</b>이며, 오픈
+          안내·시세 알림·파일럿 안내에만 사용합니다. 수신거부 시 지체 없이
+          파기합니다.{" "}
           <a
             href="/privacy"
             className="font-semibold text-brand underline underline-offset-2"
@@ -172,15 +203,15 @@ export function WaitlistForm() {
           disabled={status === "loading" || !agreed}
           className="shrink-0 rounded-xl bg-brand px-6 py-3 font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-60"
         >
-          {status === "loading" ? "신청 중…" : "저가권 알림 받기"}
+          {status === "loading" ? "등록 중…" : "얼리 액세스 신청"}
         </button>
       </div>
       {status === "error" && (
         <p className="text-sm font-medium text-rose-600">{message}</p>
       )}
       <p className="text-xs text-foreground/45">
-        품목을 고르면 해당 품목이 최근 저가권일 때 우선 알림합니다. 선택하지
-        않으면 부류 전체 요약을 보내드려요.
+        아직 정식 오픈 전입니다. 등록해 두시면 오픈일과 맞춤 알림을 가장 먼저
+        알려드립니다.
       </p>
     </form>
   );

@@ -14,9 +14,9 @@ import type { PriceItemWithSignal } from "@/lib/types";
  * 카드 전체가 상세 링크라 카드를 선택 UI로 쓰면 기존 이동이 깨진다.
  */
 export function FeaturedChart({ items }: { items: PriceItemWithSignal[] }) {
-  // 추세 근거가 있는 품목만 그린다 — 없는 선을 만들어내지 않는다
+  // 곡선은 관측 — 판정 게이트와 무관하게 점 2개 이상이면 그린다
   const charted = useMemo(
-    () => items.filter((i) => i.trendBasis === "series" && i.chartSeries.length >= 2),
+    () => items.filter((i) => i.chartSeries.length >= 2),
     [items],
   );
 

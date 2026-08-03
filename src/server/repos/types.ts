@@ -67,6 +67,8 @@ export interface IngestRunRepository {
     },
   ): Promise<void>;
   latest(limit?: number): Promise<IngestRun[]>;
+  /** sale_date 창 기준 최근 실행 (백필이 startedAt 순을 잠식해도 운영 판정에 쓴다) */
+  recentBySaleDate(asOfDate: string, windowDays?: number): Promise<IngestRun[]>;
 }
 
 export interface Repositories {

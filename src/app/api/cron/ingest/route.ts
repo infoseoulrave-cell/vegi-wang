@@ -3,6 +3,7 @@ import { getEnv } from "@/server/config/env";
 import { isValidDateISO } from "@/server/domain/date";
 import { getRepositories } from "@/server/repos";
 import { runMorningIngest } from "@/server/services/ingest";
+import { todayKST } from "@/server/domain/date";
 import { assessIngest, notifyOps } from "@/server/services/ops-alert";
 
 export const dynamic = "force-dynamic";
@@ -50,11 +51,14 @@ export async function GET(request: Request) {
    * 지나간 경락가는 다시 받을 수 없으므로, 비정상은 반드시 비-2xx로 나가야 한다.
    * 다만 일요일 휴장까지 실패로 울리면 알림이 무시당하므로 하루는 삼킨다(assessIngest).
    */
-  let recent: Awaited<ReturnType<typeof repos.ingestRuns.latest>> = [];
+  let recentBySale: Awaited<
+    ReturnType<typeof repos.ingestRuns.recentBySaleDate>
+  > = [];
   try {
-    recent = await repos.ingestRuns.latest(14);
+    // 판정 창은 '오늘' — 백필 날짜가 운영 연속실패를 만들지 않게
+    recentBySale = await repos.ingestRuns.recentBySaleDate(todayKST(), 21);
   } catch {
-    recent = [];
+    recentBySale = [];
   }
 
   const health = assessIngest(
@@ -63,7 +67,7 @@ export async function GET(request: Request) {
       rowsUpserted: result.rowsUpserted,
       saleDate: result.saleDate,
     },
-    recent,
+    recentBySale,
   );
 
   if (health.level !== "ok") {

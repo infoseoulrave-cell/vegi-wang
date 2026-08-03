@@ -9,8 +9,10 @@ import {
 } from "@/server/config/env";
 import { getRepositories } from "@/server/repos";
 import { CATALOG_ITEMS } from "@/lib/catalog";
+import { todayKST } from "@/server/domain/date";
 import {
   assessIngest,
+  pickLatestBySaleDate,
   type IngestAssessment,
 } from "@/server/services/ops-alert";
 
@@ -39,8 +41,9 @@ export async function GET() {
   // 알림이 오기를 기다리지 않고도 수집 건강도를 눈으로 확인할 수 있어야 한다
   let ingestHealth: IngestAssessment | null = null;
   try {
-    const runs = await repos.ingestRuns.latest(14);
-    const r = runs[0];
+    const asOf = todayKST();
+    const recentBySale = await repos.ingestRuns.recentBySaleDate(asOf, 21);
+    const r = pickLatestBySaleDate(recentBySale);
     if (r) {
       lastIngest = {
         saleDate: r.saleDate,
@@ -55,7 +58,7 @@ export async function GET() {
           rowsUpserted: r.rowsUpserted,
           saleDate: r.saleDate,
         },
-        runs,
+        recentBySale,
       );
     }
   } catch {

@@ -9,6 +9,7 @@ import type {
 import {
   analyzeTrend,
   buildTrendRecommendation,
+  canJudgeTiming,
   normalizeSeries,
   trendToCompass,
 } from "./trend";
@@ -84,15 +85,15 @@ export const RETAIL_GAP_META: Record<
   { label: string; tone: string }
 > = {
   reasonable: {
-    label: "소매가 합리적",
+    label: "소매 대비 낮음",
     tone: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
   },
   normal: {
-    label: "유통마진 보통",
+    label: "소매 대비 보통",
     tone: "bg-slate-50 text-slate-600 ring-slate-500/20",
   },
   bubble: {
-    label: "소매 거품 큼",
+    label: "소매 대비 큼",
     tone: "bg-rose-50 text-rose-700 ring-rose-600/20",
   },
 };
@@ -157,25 +158,44 @@ export function withSignal(item: PriceItem): PriceItemWithSignal {
   const baseline = item.auctionBaselinePerKg || (hasSeries ? trend.avg : 0);
   const deviationRate = baseline > 0 ? pct(trendRef, baseline) : undefined;
 
-  const trendBasis: PriceItemWithSignal["trendBasis"] = hasSeries
+  /*
+   * 타이밍 판정 게이트 — 곡선(차트)은 보여도 분위·추천은 표본이 충분할 때만.
+   * 이월된 "오늘" 점은 관측일로 세지 않는다.
+   */
+  const todayPoint = history.find((p) => p.label === "오늘")?.date;
+  const asOfDate =
+    todayPoint ??
+    item.asOfDate ??
+    (history.length ? history[history.length - 1]!.date : "");
+  // 이월된 "오늘" 점은 새로 잰 값이 아니므로 관측일에서 뺀다
+  const excludeDates =
+    item.priceStatus === "carried" && todayPoint
+      ? new Set([todayPoint])
+      : undefined;
+  const timingGate = asOfDate
+    ? canJudgeTiming(history, asOfDate, { excludeDates })
+    : { ok: false, observedDays: 0, windowDays: 21 };
+  const canJudge = hasSeries && timingGate.ok;
+
+  const trendBasis: PriceItemWithSignal["trendBasis"] = canJudge
     ? "series"
-    : deviationRate != null
+    : !hasSeries && deviationRate != null
       ? "baseline"
       : "none";
 
-  const compass = hasSeries
+  const compass = canJudge
     ? trendToCompass(trend.position)
-    : deviationRate != null
+    : trendBasis === "baseline" && deviationRate != null
       ? toCompass(deviationRate)
       : "fair";
-  const trendPosition = hasSeries
+  const trendPosition = canJudge
     ? trend.position
     : compass === "cheap"
       ? "low"
       : compass === "expensive"
         ? "high"
         : "mid";
-  const trendPercentile = hasSeries
+  const trendPercentile = canJudge
     ? trend.percentile
     : compass === "cheap"
       ? 20

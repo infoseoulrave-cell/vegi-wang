@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { addDaysISO } from "@/server/domain/date";
 import type {
   ItemMaster,
   DailyItemPrice,
@@ -237,6 +238,20 @@ class MemoryIngestRunRepo implements IngestRunRepository {
     return [...store().ingestRuns.values()]
       .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
       .slice(0, limit);
+  }
+
+  async recentBySaleDate(
+    asOfDate: string,
+    windowDays = 21,
+  ): Promise<IngestRun[]> {
+    const start = addDaysISO(asOfDate, -(windowDays - 1));
+    return [...store().ingestRuns.values()]
+      .filter((r) => r.saleDate >= start && r.saleDate <= asOfDate)
+      .sort((a, b) => {
+        const byDate = b.saleDate.localeCompare(a.saleDate);
+        if (byDate !== 0) return byDate;
+        return b.startedAt.localeCompare(a.startedAt);
+      });
   }
 }
 

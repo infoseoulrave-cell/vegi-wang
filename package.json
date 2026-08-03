@@ -10,9 +10,14 @@
     "test": "vitest run",
     "db:migrate": "node --env-file=.env.local ./scripts/db-migrate.mjs",
     "go:live": "node --env-file=.env.local ./scripts/go-live.mjs",
-    "catalog:verify": "node ./scripts/verify-catalog.mjs"
+    "db:inspect": "node --env-file=.env.local ./scripts/inspect-db.mjs",
+    "backfill": "node --env-file=.env.local ./scripts/backfill-ingest.mjs",
+    "catalog:verify": "node ./scripts/verify-catalog.mjs",
+    "capture:screens": "node ./scripts/capture-application-screenshots.mjs"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
     "fast-xml-parser": "^5.10.1",
     "next": "16.2.12",
     "postgres": "^3.4.9",
@@ -27,6 +32,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
+    "playwright": "^1.62.1",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.10"

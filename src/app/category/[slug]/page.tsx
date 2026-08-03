@@ -23,6 +23,9 @@ export function generateStaticParams() {
   ] satisfies { slug: CategorySlug }[];
 }
 
+const SITE =
+  process.env.NEXT_PUBLIC_SITE_URL ?? "https://vegi-wang.vercel.app";
+
 export async function generateMetadata({
   params,
 }: {
@@ -30,11 +33,23 @@ export async function generateMetadata({
 }) {
   const { slug } = await params;
   const cat = categoryFromSlug(slug);
-  if (!cat) return { title: "카테고리 — 베지왕" };
+  if (!cat) return { title: "카테고리" };
   const meta = CATEGORY_META[cat];
+  const title = `${meta.title} 가락 시세·타이밍`;
+  const description = `${meta.desc} 가락 경매가 기준 담기·관망 타이밍.`;
+  const url = `${SITE}/category/${slug}`;
   return {
-    title: `${meta.title} 시세 — 베지왕`,
-    description: meta.desc,
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      title: `${title} | 베지왕`,
+      description,
+      url,
+      type: "website",
+      locale: "ko_KR",
+      siteName: "베지왕",
+    },
   };
 }
 

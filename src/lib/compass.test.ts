@@ -1,6 +1,25 @@
 import { describe, expect, it } from "vitest";
+import { addDaysISO } from "@/server/domain/date";
 import { toCompass, toRetailGap, withSignal } from "./compass";
-import type { PriceItem } from "./types";
+import type { PriceItem, PricePoint } from "./types";
+
+/** 게이트 통과용 — endDate 기준 최근 N영업일 시계열 (가격은 고→저) */
+function denseHistory(
+  endDate: string,
+  days = 12,
+  high = 1400,
+  low = 900,
+): PricePoint[] {
+  return Array.from({ length: days }, (_, i) => {
+    const t = days <= 1 ? 0 : i / (days - 1);
+    return {
+      date: addDaysISO(endDate, -(days - 1 - i)),
+      price: Math.round(high + (low - high) * t),
+    };
+  });
+}
+
+const AS_OF = "2026-08-02";
 
 describe("toCompass (편차 폴백)", () => {
   it("평균比 -10% 이하면 cheap, +10% 이상이면 expensive", () => {
@@ -39,10 +58,8 @@ describe("withSignal (최근 동향 포지션)", () => {
     retailPerKg: 2500,
     priceStatus: "live",
     history: [
-      { date: "2026-06-29", price: 1400, label: "1개월전" },
-      { date: "2026-07-15", price: 1200, label: "2주전" },
-      { date: "2026-07-22", price: 1100, label: "1주전" },
-      { date: "2026-07-28", price: 1000, label: "1일전" },
+      ...denseHistory(AS_OF, 12, 1400, 1000),
+      { date: AS_OF, price: 900, label: "오늘" },
     ],
   };
 
@@ -118,10 +135,27 @@ describe("withSignal (최근 동향 포지션)", () => {
       history: [{ date: "2026-07-31", price: 900, label: "오늘" }],
     });
     expect(s.trendBasis).toBe("none");
-    expect(s.recommendation).toContain("이력이 쌓이면");
+    expect(s.recommendation).toContain("이력이 더 모이면");
   });
 
-  it("시계열이 2점 이상이면 분위 기반 추세를 쓴다", () => {
+  it("관측이 얇으면 차트는 남겨도 타이밍 판정은 유보한다", () => {
+    const s = withSignal({
+      ...cabbage,
+      auctionBaselinePerKg: 0,
+      baselineMethod: "none",
+      history: [
+        { date: "2026-07-28", price: 1100 },
+        { date: "2026-07-30", price: 1000 },
+        { date: AS_OF, price: 900, label: "오늘" },
+      ],
+    });
+    expect(s.trendBasis).toBe("none");
+    expect(s.chartSeries.length).toBeGreaterThanOrEqual(2);
+    expect(s.recommendation).not.toContain("저가권");
+    expect(s.recommendation).not.toContain("고가권");
+  });
+
+  it("게이트를 통과하면 분위 기반 추세를 쓴다", () => {
     const s = withSignal(cabbage);
     expect(s.trendBasis).toBe("series");
     expect(s.trendPosition).toBe("low");
@@ -134,9 +168,16 @@ describe("withSignal (최근 동향 포지션)", () => {
    */
   it("trendPerKg가 있으면 그 값으로 분위를 잰다", () => {
     const kamisSeries = [
-      { date: "2026-07-20", price: 1000, source: "kamis" as const },
-      { date: "2026-07-25", price: 1100, source: "kamis" as const },
-      { date: "2026-07-31", price: 1050, source: "kamis" as const },
+      ...denseHistory(AS_OF, 12, 900, 1200).map((p) => ({
+        ...p,
+        source: "kamis" as const,
+      })),
+      {
+        date: AS_OF,
+        price: 1050,
+        label: "오늘",
+        source: "kamis" as const,
+      },
     ];
     // 표시 가격은 가락 1,895 (KAMIS 분포 최상단) — 그대로 재면 항상 고가권
     const naive = withSignal({
@@ -146,6 +187,7 @@ describe("withSignal (최근 동향 포지션)", () => {
       baselineMethod: "none",
       history: kamisSeries,
     });
+    expect(naive.trendBasis).toBe("series");
     expect(naive.trendPosition).toBe("high");
 
     // KAMIS 오늘값(1,050)으로 재면 중위권 — 실제 시세 위치

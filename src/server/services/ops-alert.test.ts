@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { IngestRun, IngestRunStatus } from "@/server/domain/models";
-import { assessIngest, emptyDayStreak } from "./ops-alert";
+import {
+  assessIngest,
+  emptyDayStreak,
+  filterRunsByRecentSaleDate,
+  pickLatestBySaleDate,
+} from "./ops-alert";
 
 function run(
   saleDate: string,
@@ -30,6 +35,20 @@ describe("emptyDayStreak", () => {
         run("2026-07-30", "success", 9000),
       ]),
     ).toBe(2);
+  });
+
+  it("시도 없는 날은 건너뛰고, asOfDate 기준으로 센다", () => {
+    // 7/27 빈손 백필이 있어도 7/31 성공이 있으면 Aug 2 기준으로는 하루뿐
+    expect(
+      emptyDayStreak(
+        [
+          run("2026-08-02", "empty"),
+          run("2026-07-27", "empty"),
+          run("2026-07-31", "success", 8000),
+        ],
+        "2026-08-02",
+      ),
+    ).toBe(1);
   });
 
   it("가장 최근이 성공이면 0이다", () => {
@@ -64,6 +83,51 @@ describe("emptyDayStreak", () => {
         run("2026-07-31", "empty"),
       ]),
     ).toBe(2);
+  });
+});
+
+describe("filterRunsByRecentSaleDate", () => {
+  /** 백필 빈손이 startedAt 순 최근 14건을 잠식해도 sale_date 창으로 걸러진다 */
+  it("최근 sale_date 창 밖 백필은 판정에서 제외한다", () => {
+    const runs = [
+      run("2026-07-01", "empty"),
+      run("2026-07-02", "empty"),
+      run("2026-07-03", "empty"),
+      run("2026-08-01", "success", 8000),
+      run("2026-08-02", "success", 9000),
+    ];
+    // 14일 창: 7/20~8/2 — 7월 초 백필은 제외
+    const filtered = filterRunsByRecentSaleDate(runs, "2026-08-02", 14);
+    expect(filtered.map((r) => r.saleDate).sort()).toEqual([
+      "2026-08-01",
+      "2026-08-02",
+    ]);
+    const latest = pickLatestBySaleDate(filtered)!;
+    const a = assessIngest(
+      {
+        status: latest.status,
+        rowsUpserted: latest.rowsUpserted,
+        saleDate: latest.saleDate,
+      },
+      filtered,
+    );
+    expect(a.level).toBe("ok");
+  });
+
+  it("창 안 이틀 연속 빈손은 여전히 alert", () => {
+    const runs = [
+      run("2026-07-31", "success", 7000),
+      run("2026-08-01", "empty"),
+      run("2026-08-02", "empty"),
+      run("2026-07-01", "empty"), // 창 밖 백필
+    ];
+    const filtered = filterRunsByRecentSaleDate(runs, "2026-08-02", 21);
+    const a = assessIngest(
+      { status: "empty", rowsUpserted: 0, saleDate: "2026-08-02" },
+      filtered,
+    );
+    expect(a.level).toBe("alert");
+    expect(a.emptyStreak).toBe(2);
   });
 });
 
